@@ -1,0 +1,54 @@
+name: Makro-Monitor Datenupdate
+
+# Laeuft werktags frueh (EU) und nach den US-Releases (Nachmittag). Zeiten in UTC.
+# Manueller Start jederzeit ueber "Run workflow".
+on:
+  schedule:
+    - cron: "0 5 * * 1-5"    # ~06:00/07:00 MEZ/MESZ
+    - cron: "0 14 * * 1-5"   # nach US-Datenreleases (NFP, Claims, ...)
+  workflow_dispatch: {}
+
+concurrency:
+  group: marktdaten-update
+  cancel-in-progress: false
+
+# Erlaubt dem eingebauten GITHUB_TOKEN, die aktualisierte JSON zu committen.
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Repo auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Abhaengigkeiten
+        run: pip install requests openpyxl
+
+      # Schreibt marktdaten.json NUR bei Erfolg. Schlaegt der Abruf fehl,
+      # bricht dieser Schritt ab -> es wird nichts committet -> letzter guter Stand bleibt.
+      - name: Daten aktualisieren
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_FROM: ${{ secrets.ALERT_FROM }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+        run: python update_marktdaten.py
+
+      - name: Aktualisierte JSON committen (nur bei Aenderung)
+        run: |
+          if [ -n "$(git status --porcelain marktdaten.json)" ]; then
+            git config user.name "gloriarms-data-bot"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add marktdaten.json
+            git commit -m "Makro-Update $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          else
+            echo "Keine Aenderung an marktdaten.json - nichts zu committen."
+          fi
