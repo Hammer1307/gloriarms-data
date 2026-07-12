@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Makro-Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0D1F4E;--panel:#FFFFFF;--panel2:#EEF1F7;--line:rgba(13,31,78,.10);--line-nav:rgba(255,255,255,.16);--tx:#EAEDF6;--ink:#1A2342;--mut:#A7AFCB;--mut-ink:#5A607A;--gold:#C8A84B;--sent:#e0245e;--comm:#C8A84B;--lab:#3ba776;--eu:#3b82f6;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+header{border-bottom:1px solid var(--line-nav)}
+.hwrap{max-width:1280px;margin:0 auto;padding:22px 28px}
+.htop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:21px;letter-spacing:.3px}
+.sub{color:var(--mut);font-size:13px;margin-top:4px}
+.langsw{font-size:12px;color:var(--mut);white-space:nowrap}
+.langsw a{color:var(--mut);text-decoration:none;padding:2px 6px;border:1px solid var(--line-nav);border-radius:6px;margin-left:4px}
+.langsw a.active{color:#fff;border-color:var(--gold)}
+.wrap{padding:22px 28px;max-width:1280px;margin:0 auto}
+.secttl{font-size:13px;text-transform:uppercase;letter-spacing:1.5px;color:var(--mut);margin:26px 0 12px;display:flex;align-items:center;gap:10px}
+.secttl::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--dot)}
+.s1{--dot:var(--sent)}.s2{--dot:var(--lab)}.s3{--dot:var(--eu)}
+.subgrp{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--mut);margin:14px 0 8px;opacity:.8}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;color:var(--ink);box-shadow:0 4px 14px rgba(5,14,38,.20)}
+.card.sent{border-left:3px solid var(--sent)}.card.comm{border-left:3px solid var(--comm)}
+.card.lab{border-left:3px solid var(--lab)}.card.eu{border-left:3px solid var(--eu)}
+.card .t{font-size:12px;color:var(--mut-ink);margin-bottom:6px}
+.card .v{font-size:24px;font-weight:600}
+.card .b{margin-top:6px;font-size:12px;display:flex;gap:8px;align-items:center}
+.card .asof{margin-top:8px;font-size:10.5px;color:var(--mut-ink);opacity:.85;border-top:1px solid var(--line);padding-top:6px}
+.d.up{color:#1E9E48}.d.dn{color:#DD4A42}.u{color:var(--mut-ink)}
+.charts{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:16px}
+.chart{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;color:var(--ink);box-shadow:0 4px 14px rgba(5,14,38,.20)}
+.chart h3{margin:0 0 10px;font-size:14px;font-weight:600}
+.chart .cw{position:relative;height:220px}
+.chart .expl{margin-top:10px;font-size:11.5px;line-height:1.55;color:var(--mut-ink);border-top:1px solid var(--line);padding-top:9px}
+@media(max-width:820px){.charts{grid-template-columns:1fr}}
+footer{color:var(--mut);font-size:12px;border-top:1px solid var(--line-nav);margin-top:26px;line-height:1.6}
+footer p{margin:8px 0}footer b{color:#aab6d0}
+.ftitle{font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:var(--mut);margin-bottom:8px}
+.badge{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--mut-ink);margin-left:8px}
+#status{display:none;background:#3a1720;border:1px solid #e0245e;color:#ffb3c1;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:13px}
+</style></head><body>
+<header><div class="hwrap htop">
+  <div><h1>Makro-Monitor <span class="badge" id="badge"></span></h1><div class="sub" id="sub"></div></div>
+  <div class="langsw" id="langsw"></div>
+</div></header>
+<div class="wrap">
+  <div id="status"></div>
+  <div class="secttl s1" id="sec1"></div>
+  <div class="subgrp" id="sub-sent"></div>
+  <div class="grid" id="g-sent"></div>
+  <div class="subgrp" id="sub-comm"></div>
+  <div class="grid" id="g-comm"></div>
+  <div class="charts" id="charts-1"></div>
+  <div class="secttl s2" id="sec2"></div>
+  <div class="grid" id="g-lab"></div>
+  <div class="charts" id="charts-2"></div>
+  <div class="secttl s3" id="sec3"></div>
+  <div class="grid" id="g-eu"></div>
+  <div class="charts" id="charts-3"></div>
+</div>
+<footer><div class="hwrap" id="footer-content"></div></footer>
+<script>
+/* ---------------- i18n ---------------- */
+const I18N={
+ de:{
+  asOf:"Stand:", updated:"aktualisiert",
+  statusErr:"Die aktuellen Daten konnten nicht geladen werden",
+  headerSub:"Nur lizenzfreie Quellen · Stand der Daten je Indikator direkt auf der Kachel.",
+  months:["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],
+  sections:{s1:"Risk-Sentiment & Rohstoffe",s2:"US-Arbeitsmarkt",s3:"Eurozone – Frühindikatoren (EU-Kommission)"},
+  subgroups:{sent:"Sentiment",comm:"Rohstoffe"},
+  units:{pts:"Punkte",bps:"bps",usdbbl:"USD/bbl",usdoz:"USD/oz",usdmmbtu:"USD/MMBtu",usdlb:"USD/lb",mom:"z. Vorm.",pct:"%",weekly:"wöchentl.",avg100:"Ø=100",balance:"Saldo",k:"Tsd."},
+  notes:{ecbAvg:"EZB-Monatsdurchschnitt"},
+  cards:{vix:"VIX (Aktien-Vol)",btp:"Bund-BTP-Spread",oat:"Bund-OAT-Spread",brent:"Brent",wti:"WTI",gold:"Gold",gas:"Erdgas (Henry Hub)",copper:"Kupfer (Dr. Copper)",nfp:"US-Beschäftigung Δ",unemp:"US-Arbeitslosenquote",claims:"Erstanträge Alg.",wages:"Ø-Stundenlohn YoY",esi:"ESI Eurozone",ind:"Industrievertrauen EZ",cons:"Verbrauchervertrauen EZ",svc:"Dienstleistungen EZ"},
+  chartTitles:{vix:"VIX – Aktienmarkt-Volatilität",spread:"Peripherie-Spreads vs. Bund (bps · EZB-Monatsdurchschnitt)",oil:"Öl: Brent vs. WTI (USD/bbl)",gold:"Gold (USD/oz)",gas:"Erdgas Henry Hub (USD/MMBtu)",copper:"Kupfer – Dr. Copper (USD/lb)",nfp:"US-Beschäftigung – Monatsveränderung (Tsd.)",unemp:"US-Arbeitslosenquote (%)",claims:"Erstanträge Arbeitslosenhilfe (wöchentlich)",esi:"Economic Sentiment Indicator (ESI, Ø=100)",conf:"Vertrauensindikatoren Eurozone (Salden)"},
+  legends:{btp:"BTP-Bund",oat:"OAT-Bund",brent:"Brent",wti:"WTI",ind:"Industrie",cons:"Verbraucher",svc:"Dienstleistungen"},
+  expl:{
+   vix:"Der VIX misst die vom Optionsmarkt erwartete Schwankungsbreite des US-Aktienmarkts (S&P 500) für die nächsten 30 Tage. Niedrige Werte (unter ~15) stehen für Ruhe, Werte über 25–30 für Stress und Angst. Als „Angstbarometer“ zeigt er früh, wann Anleger nervös werden – oft bevor es sich in den Kursen niederschlägt.",
+   spread:"Der Spread ist der Renditeaufschlag 10-jähriger italienischer (BTP) bzw. französischer (OAT) Staatsanleihen gegenüber deutschen Bundesanleihen. Er zeigt, wie viel höhere Zinsen diese Länder zahlen müssen – je größer der Abstand, desto mehr Risiko sieht der Markt. Ein klassischer Frühwarnindikator für Spannungen in der Eurozone. Datenbasis: EZB-Monatsdurchschnitt der 10J-Renditen (rund ein Monat Nachlauf) – ein struktureller Indikator, kein Tageswert.",
+   oil:"Brent (Nordsee) und WTI (USA) sind die beiden globalen Rohöl-Referenzpreise. Ihr Niveau treibt Sprit-, Energie- und Transportkosten und damit die Inflation; die Differenz beider verrät etwas über die regionale Angebots- und Nachfragelage. Steigende Ölpreise bremsen tendenziell das Wachstum und erhöhen den Inflationsdruck.",
+   gold:"Gold gilt als sicherer Hafen und Schutz gegen Inflation und Krisen. Steigende Preise deuten oft auf Unsicherheit, fallende Realzinsen oder einen schwächeren Dollar hin. Als anlageklassenübergreifender Stimmungsmesser ergänzt Gold das Bild aus Zinsen und Risikoappetit.",
+   gas:"Henry Hub ist der US-Referenzpreis für Erdgas. Gaspreise wirken direkt auf Strom-, Heiz- und Industriekosten und sind ein wichtiger Inflationstreiber. Starke Ausschläge signalisieren Angebotsschocks oder Nachfragespitzen, etwa durch Wetter oder Speicherstände.",
+   copper:"Kupfer steckt in Bau, Elektro und Industrie – daher der Spitzname „Dr. Copper“: Der Preis gilt als Frühindikator für die Weltkonjunktur. Steigende Notierungen deuten auf anziehende Industrienachfrage und Wachstum hin, fallende auf eine Abkühlung.",
+   nfp:"Zeigt, wie viele Stellen die US-Wirtschaft außerhalb der Landwirtschaft pro Monat geschaffen oder verloren hat – der meistbeachtete Arbeitsmarktbericht weltweit. Starke Zahlen sprechen für eine robuste Konjunktur, schwache für Abkühlung. Zentral für die Zinspolitik der Fed und damit für Dollar und Anleihen.",
+   unemp:"Der Anteil der Erwerbslosen an allen Erwerbspersonen in den USA. Ein steigender Trend signalisiert eine schwächere Wirtschaft, ein sehr niedriger Wert einen angespannten Arbeitsmarkt mit Lohndruck. Die Fed wägt dieses Ziel laufend gegen die Inflation ab.",
+   claims:"Wöchentliche Erstanträge auf US-Arbeitslosenhilfe – der aktuellste Arbeitsmarktindikator überhaupt. Weil er wöchentlich erscheint, zeigt er Wendepunkte früher als die Monatsdaten: steigende Anträge sind ein frühes Warnsignal für einen kippenden Arbeitsmarkt.",
+   esi:"Der Economic Sentiment Indicator der EU-Kommission bündelt die Stimmung aus fünf Bereichen (Industrie, Dienstleistungen, Verbraucher, Handel, Bau) zu einem Gesamtwert; 100 = langfristiger Durchschnitt. Werte darüber signalisieren überdurchschnittliche Zuversicht, darunter Pessimismus. Einer der wichtigsten Frühindikatoren für die Eurozonen-Konjunktur.",
+   conf:"Die Teilkomponenten hinter dem ESI: Industrie-, Verbraucher- und Dienstleistungsvertrauen, jeweils als Saldo aus optimistischen minus pessimistischen Antworten (0 = neutral). Sie zeigen, aus welcher Ecke Rücken- oder Gegenwind kommt – etwa ob Konsumenten oder Industrie die Stimmung drücken."
+  },
+  footer:{
+   title:"Quellen & rechtlicher Hinweis",
+   sources:"<b>Quellen:</b> FRED / Federal Reserve Bank of St. Louis (VIX, Brent, WTI, Henry Hub, US-Arbeitsmarkt) · EZB-Konvergenzrenditen, Fallback OECD/FRED (10J-Renditen DE/IT/FR, daraus selbst berechnete Spreads) · Yahoo Finance (Gold, Kupfer) · Eurostat / Europäische Kommission, GD ECFIN (Economic Sentiment Indicator & Vertrauensindikatoren der Eurozone, EA20, saisonbereinigt). Alle genannten Marken-, Index- und Reihennamen sind Eigentum der jeweiligen Anbieter.",
+   notes:"<b>Datenhinweise:</b> Rohstoff- und VIX-Werte werden börsentäglich fortgeschrieben (wenige Tage Nachlauf), Renditespreads und Frühindikatoren monatlich. Das jeweils maßgebliche Stand-Datum steht auf jeder Kachel.",
+   disclaimer:"<b>Haftungsausschluss:</b> Die auf dieser Seite dargestellten Markt- und Wirtschaftsdaten stammen aus öffentlich zugänglichen Drittquellen und dienen ausschließlich der allgemeinen Information. Sie stellen keine Anlage-, Rechts- oder Steuerberatung dar und sind weder ein Angebot noch eine Aufforderung zum Kauf oder Verkauf von Finanzinstrumenten. Trotz sorgfältiger Aufbereitung wird keine Gewähr für Richtigkeit, Vollständigkeit und Aktualität der Daten übernommen; Werte können verzögert, nachträglich revidiert oder fehlerhaft sein. Eine Haftung für Schäden, die aus der Nutzung oder Nichtnutzung dieser Informationen entstehen, ist – soweit gesetzlich zulässig – ausgeschlossen. Vergangene Entwicklungen sind kein verlässlicher Indikator für künftige Ergebnisse. Entscheidungen auf Basis dieser Daten treffen die Nutzerinnen und Nutzer eigenverantwortlich."
+  }
+ },
+ en:{
+  asOf:"As of:", updated:"updated",
+  statusErr:"Current data could not be loaded",
+  headerSub:"License-free sources only · each indicator's data date is shown on its tile.",
+  months:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
+  sections:{s1:"Risk sentiment & commodities",s2:"US labor market",s3:"Eurozone – leading indicators (European Commission)"},
+  subgroups:{sent:"Sentiment",comm:"Commodities"},
+  units:{pts:"points",bps:"bps",usdbbl:"USD/bbl",usdoz:"USD/oz",usdmmbtu:"USD/MMBtu",usdlb:"USD/lb",mom:"MoM",pct:"%",weekly:"weekly",avg100:"avg=100",balance:"balance",k:"k"},
+  notes:{ecbAvg:"ECB monthly average"},
+  cards:{vix:"VIX (equity vol)",btp:"Bund-BTP spread",oat:"Bund-OAT spread",brent:"Brent",wti:"WTI",gold:"Gold",gas:"Natural gas (Henry Hub)",copper:"Copper (Dr. Copper)",nfp:"US payrolls Δ",unemp:"US unemployment rate",claims:"Initial jobless claims",wages:"Avg hourly earnings YoY",esi:"ESI eurozone",ind:"Industry confidence EZ",cons:"Consumer confidence EZ",svc:"Services confidence EZ"},
+  chartTitles:{vix:"VIX – equity market volatility",spread:"Periphery spreads vs. Bund (bps · ECB monthly average)",oil:"Oil: Brent vs. WTI (USD/bbl)",gold:"Gold (USD/oz)",gas:"Natural gas Henry Hub (USD/MMBtu)",copper:"Copper – Dr. Copper (USD/lb)",nfp:"US payrolls – monthly change (thousands)",unemp:"US unemployment rate (%)",claims:"Initial jobless claims (weekly)",esi:"Economic Sentiment Indicator (ESI, avg=100)",conf:"Eurozone confidence indicators (balances)"},
+  legends:{btp:"BTP-Bund",oat:"OAT-Bund",brent:"Brent",wti:"WTI",ind:"Industry",cons:"Consumer",svc:"Services"},
+  expl:{
+   vix:"The VIX measures the swing in the US stock market (S&P 500) that the options market expects over the next 30 days. Low readings (below ~15) signal calm, values above 25–30 stress and fear. As the market's ‘fear gauge’ it flags nervousness early — often before it shows up in prices.",
+   spread:"The spread is the extra yield on 10-year Italian (BTP) or French (OAT) government bonds over German Bunds. It shows how much more these countries must pay to borrow — the wider the gap, the more risk the market sees. A classic early-warning gauge for tensions in the eurozone. Data basis: ECB monthly average of 10y yields (about one month lag) — a structural indicator, not a daily value.",
+   oil:"Brent (North Sea) and WTI (US) are the two global crude oil benchmarks. Their level drives fuel, energy and transport costs and hence inflation; the gap between them says something about regional supply and demand. Rising oil prices tend to slow growth and add to inflation pressure.",
+   gold:"Gold is seen as a safe haven and a hedge against inflation and crises. Rising prices often point to uncertainty, falling real rates or a weaker dollar. As a cross-asset mood gauge, gold rounds out the picture from rates and risk appetite.",
+   gas:"Henry Hub is the US benchmark price for natural gas. Gas prices feed directly into electricity, heating and industrial costs and are an important inflation driver. Sharp moves signal supply shocks or demand spikes, e.g. from weather or storage levels.",
+   copper:"Copper is used across construction, electrical and industry — hence the nickname ‘Dr. Copper’: its price is seen as a leading indicator for the global economy. Rising quotes suggest firming industrial demand and growth, falling ones a slowdown.",
+   nfp:"Shows how many jobs the US economy added or lost outside farming each month — the world's most-watched labor report. Strong numbers point to a robust economy, weak ones to cooling. Central to the Fed's rate policy and thus to the dollar and bonds.",
+   unemp:"The share of unemployed among the US labor force. A rising trend signals a weaker economy, a very low value a tight labor market with wage pressure. The Fed constantly weighs this goal against inflation.",
+   claims:"Weekly initial claims for US unemployment benefits — the most timely labor indicator there is. Because it comes weekly, it flags turning points earlier than the monthly data: rising claims are an early warning of a labor market rolling over.",
+   esi:"The European Commission's Economic Sentiment Indicator bundles sentiment from five areas (industry, services, consumers, retail, construction) into one figure; 100 = long-term average. Values above signal above-average confidence, below pessimism. One of the most important leading indicators for the eurozone economy.",
+   conf:"The sub-components behind the ESI: industry, consumer and services confidence, each as a balance of optimistic minus pessimistic replies (0 = neutral). They show where tailwinds or headwinds come from — e.g. whether consumers or industry are weighing on the mood."
+  },
+  footer:{
+   title:"Sources & legal notice",
+   sources:"<b>Sources:</b> FRED / Federal Reserve Bank of St. Louis (VIX, Brent, WTI, Henry Hub, US labor market) · ECB convergence yields, fallback OECD/FRED (10y yields DE/IT/FR, self-computed spreads) · Yahoo Finance (gold, copper) · Eurostat / European Commission, DG ECFIN (Economic Sentiment Indicator & eurozone confidence indicators, EA20, seasonally adjusted). All brand, index and series names are the property of their respective owners.",
+   notes:"<b>Data notes:</b> Commodity and VIX values are updated each trading day (a few days' lag), yield spreads and leading indicators monthly. The relevant data date is shown on each tile.",
+   disclaimer:"<b>Disclaimer:</b> The market and economic data shown here come from publicly available third-party sources and are provided for general information only. They do not constitute investment, legal or tax advice and are neither an offer nor a solicitation to buy or sell any financial instrument. Despite careful preparation, no warranty is given as to the accuracy, completeness or timeliness of the data; values may be delayed, subsequently revised or erroneous. Liability for any damages arising from the use or non-use of this information is excluded to the extent permitted by law. Past performance is not a reliable indicator of future results. Users act on their own responsibility when making decisions based on this data."
+  }
+ },
+ it:{
+  asOf:"Dato al:", updated:"aggiornato",
+  statusErr:"Impossibile caricare i dati aggiornati",
+  headerSub:"Solo fonti libere da licenza · la data del dato è indicata su ogni riquadro.",
+  months:["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"],
+  sections:{s1:"Sentiment di rischio e materie prime",s2:"Mercato del lavoro USA",s3:"Eurozona – indicatori anticipatori (Commissione UE)"},
+  subgroups:{sent:"Sentiment",comm:"Materie prime"},
+  units:{pts:"punti",bps:"bps",usdbbl:"USD/bbl",usdoz:"USD/oz",usdmmbtu:"USD/MMBtu",usdlb:"USD/lb",mom:"m/m",pct:"%",weekly:"settim.",avg100:"media=100",balance:"saldo",k:"mila"},
+  notes:{ecbAvg:"media mensile BCE"},
+  cards:{vix:"VIX (vol. azionaria)",btp:"Spread Bund-BTP",oat:"Spread Bund-OAT",brent:"Brent",wti:"WTI",gold:"Oro",gas:"Gas naturale (Henry Hub)",copper:"Rame (Dr. Copper)",nfp:"Occupati USA Δ",unemp:"Tasso disoccupazione USA",claims:"Nuove richieste sussidi",wages:"Retrib. oraria media a/a",esi:"ESI eurozona",ind:"Fiducia industria EZ",cons:"Fiducia consumatori EZ",svc:"Servizi EZ"},
+  chartTitles:{vix:"VIX – volatilità del mercato azionario",spread:"Spread periferici vs. Bund (bps · media mensile BCE)",oil:"Petrolio: Brent vs. WTI (USD/bbl)",gold:"Oro (USD/oz)",gas:"Gas naturale Henry Hub (USD/MMBtu)",copper:"Rame – Dr. Copper (USD/lb)",nfp:"Occupati USA – variazione mensile (migliaia)",unemp:"Tasso di disoccupazione USA (%)",claims:"Nuove richieste di sussidio (settimanale)",esi:"Economic Sentiment Indicator (ESI, media=100)",conf:"Indicatori di fiducia eurozona (saldi)"},
+  legends:{btp:"BTP-Bund",oat:"OAT-Bund",brent:"Brent",wti:"WTI",ind:"Industria",cons:"Consumatori",svc:"Servizi"},
+  expl:{
+   vix:"Il VIX misura l'oscillazione del mercato azionario USA (S&P 500) attesa dal mercato delle opzioni nei prossimi 30 giorni. Valori bassi (sotto ~15) indicano calma, sopra 25–30 stress e paura. Come ‘barometro della paura’ segnala il nervosismo in anticipo, spesso prima che si veda nei prezzi.",
+   spread:"Lo spread è il maggior rendimento dei titoli di Stato decennali italiani (BTP) o francesi (OAT) rispetto ai Bund tedeschi. Indica quanto più questi Paesi devono pagare per finanziarsi: più ampio il divario, più rischio percepisce il mercato. Un classico indicatore anticipatore di tensioni nell'eurozona. Base dati: media mensile BCE dei rendimenti decennali (circa un mese di ritardo), un indicatore strutturale, non un valore giornaliero.",
+   oil:"Brent (Mare del Nord) e WTI (USA) sono i due prezzi di riferimento globali del greggio. Il loro livello influenza i costi di carburante, energia e trasporti e quindi l'inflazione; la differenza tra i due riflette domanda e offerta regionali. Un rialzo del petrolio tende a frenare la crescita e ad aumentare la pressione inflazionistica.",
+   gold:"L'oro è considerato un bene rifugio e una copertura contro inflazione e crisi. Prezzi in rialzo indicano spesso incertezza, tassi reali in calo o un dollaro più debole. Come indicatore di sentiment trasversale, l'oro completa il quadro di tassi e propensione al rischio.",
+   gas:"Henry Hub è il prezzo di riferimento USA del gas naturale. I prezzi del gas incidono direttamente su costi di elettricità, riscaldamento e industria e sono un importante motore dell'inflazione. Forti oscillazioni segnalano shock di offerta o picchi di domanda, ad es. per meteo o livelli di stoccaggio.",
+   copper:"Il rame è impiegato in edilizia, elettrotecnica e industria: da qui il soprannome ‘Dr. Copper’. Il suo prezzo è considerato un indicatore anticipatore dell'economia mondiale. Quotazioni in rialzo indicano domanda industriale e crescita in aumento, in calo un rallentamento.",
+   nfp:"Mostra quanti posti di lavoro l'economia USA ha creato o perso ogni mese al di fuori dell'agricoltura: il report sul lavoro più seguito al mondo. Dati forti indicano un'economia robusta, deboli un raffreddamento. Cruciale per la politica dei tassi della Fed e quindi per dollaro e obbligazioni.",
+   unemp:"La quota di disoccupati sulla forza lavoro USA. Un trend in aumento segnala un'economia più debole, un valore molto basso un mercato del lavoro teso con pressioni salariali. La Fed bilancia costantemente questo obiettivo con l'inflazione.",
+   claims:"Nuove richieste settimanali di sussidio di disoccupazione USA: l'indicatore del lavoro più tempestivo in assoluto. Essendo settimanale, segnala i punti di svolta prima dei dati mensili: richieste in aumento sono un segnale precoce di un mercato del lavoro in peggioramento.",
+   esi:"L'Economic Sentiment Indicator della Commissione UE riunisce il sentiment di cinque settori (industria, servizi, consumatori, commercio al dettaglio, costruzioni) in un unico valore; 100 = media di lungo periodo. Valori superiori indicano fiducia sopra la media, inferiori pessimismo. Uno dei più importanti indicatori anticipatori per l'economia dell'eurozona.",
+   conf:"Le sotto-componenti dietro l'ESI: fiducia di industria, consumatori e servizi, ciascuna come saldo tra risposte ottimistiche e pessimistiche (0 = neutro). Mostrano da dove arrivano venti a favore o contrari, ad es. se sono i consumatori o l'industria a pesare sul clima."
+  },
+  footer:{
+   title:"Fonti e nota legale",
+   sources:"<b>Fonti:</b> FRED / Federal Reserve Bank of St. Louis (VIX, Brent, WTI, Henry Hub, mercato del lavoro USA) · rendimenti di convergenza BCE, fallback OCSE/FRED (rendimenti decennali DE/IT/FR, spread calcolati internamente) · Yahoo Finance (oro, rame) · Eurostat / Commissione europea, DG ECFIN (Economic Sentiment Indicator e indicatori di fiducia dell'eurozona, EA20, destagionalizzati). Tutti i nomi di marchi, indici e serie appartengono ai rispettivi proprietari.",
+   notes:"<b>Note sui dati:</b> I valori di materie prime e VIX sono aggiornati ogni giorno di borsa (pochi giorni di ritardo), spread e indicatori anticipatori mensilmente. La data di riferimento è indicata su ogni riquadro.",
+   disclaimer:"<b>Avvertenza:</b> I dati di mercato ed economici qui riportati provengono da fonti terze pubblicamente disponibili e hanno finalità puramente informative. Non costituiscono consulenza in materia di investimenti, legale o fiscale e non sono né un'offerta né una sollecitazione all'acquisto o alla vendita di strumenti finanziari. Nonostante l'accurata elaborazione, non si garantisce l'esattezza, la completezza o l'attualità dei dati; i valori possono essere ritardati, successivamente rivisti o errati. È esclusa, nei limiti di legge, ogni responsabilità per danni derivanti dall'uso o dal mancato uso di queste informazioni. Le performance passate non sono un indicatore affidabile dei risultati futuri. Le decisioni basate su questi dati sono assunte dall'utente sotto la propria responsabilità."
+  }
+ }
+};
+/* ---------------- setup ---------------- */
+const LANGS=["de","en","it"];
+const P=new URLSearchParams(location.search);
+let LANG=(P.get("lang")||window.__LANG__||"de").toLowerCase();
+if(!LANGS.includes(LANG)) LANG="de";
+const LOC={de:"de-DE",en:"en-US",it:"it-IT"}[LANG];
+const T=I18N[LANG];
+document.documentElement.setAttribute("lang",LANG);
+const MUT="#5A607A", GRID="rgba(13,31,78,.08)";
+const nf=(n,dec)=>Number(n).toLocaleString(LOC,{minimumFractionDigits:dec,maximumFractionDigits:dec});
+
+function cardValue(c){
+  switch(c.kind){
+    case "cur": return "$"+nf(c.raw,2);
+    case "signk": return (c.raw>=0?"+":"")+nf(c.raw,0)+" "+T.units.k;
+    case "k": return nf(c.raw,0)+" "+T.units.k;
+    case "pct": return nf(c.raw,c.dec)+"%";
+    default: return nf(c.raw,c.dec);
+  }
+}
+function unitLabel(c){ return c.unit==="usdlevel" ? "USD "+nf(c.extra,2) : (T.units[c.unit]||c.unit); }
+function asofLabel(c){
+  const p=c.asof.split("-"), y=p[0], m=p[1], dd=p[2];
+  if(c.freq==="m") return T.months[parseInt(m,10)-1]+" "+y;
+  if(LANG==="en") return T.months[parseInt(m,10)-1]+" "+parseInt(dd,10)+", "+y;
+  if(LANG==="it") return dd+"/"+m+"/"+y;
+  return dd+"."+m+"."+y;
+}
+
+/* ---------------- static text ---------------- */
+function fillStatic(){
+  document.getElementById("sub").textContent=T.headerSub;
+  document.getElementById("sec1").textContent=T.sections.s1;
+  document.getElementById("sec2").textContent=T.sections.s2;
+  document.getElementById("sec3").textContent=T.sections.s3;
+  document.getElementById("sub-sent").textContent=T.subgroups.sent;
+  document.getElementById("sub-comm").textContent=T.subgroups.comm;
+  document.getElementById("footer-content").innerHTML=
+    '<div class="ftitle">'+T.footer.title+'</div>'+
+    '<p>'+T.footer.sources+'</p><p>'+T.footer.notes+'</p><p>'+T.footer.disclaimer+'</p>';
+  const sw=document.getElementById("langsw");
+  sw.innerHTML=LANGS.map(l=>{
+    const u=new URL(location.href); u.searchParams.set("lang",l);
+    return '<a href="'+u.pathname+u.search+'" class="'+(l===LANG?"active":"")+'">'+l.toUpperCase()+'</a>';
+  }).join("");
+}
+
+/* ---------------- cards ---------------- */
+function renderCards(cards){
+  const box={sent:document.getElementById("g-sent"),comm:document.getElementById("g-comm"),
+             lab:document.getElementById("g-lab"),eu:document.getElementById("g-eu")};
+  cards.forEach(c=>{
+    const unitEl='<span class="u">'+unitLabel(c)+'</span>';
+    let badge;
+    if(c.delta===null||c.delta===undefined){ badge=unitEl; }
+    else{ const up=c.delta>=0; badge='<span class="d '+(up?"up":"dn")+'">'+(up?"▲":"▼")+" "+nf(Math.abs(c.delta),1)+'</span>'+unitEl; }
+    const note=c.note?(" · "+T.notes[c.note]):"";
+    const el=document.createElement("div");
+    el.className="card "+c.group;
+    el.innerHTML='<div class="t">'+T.cards[c.id]+'</div><div class="v">'+cardValue(c)+'</div>'+
+                 '<div class="b">'+badge+'</div><div class="asof">'+T.asOf+" "+asofLabel(c)+note+'</div>';
+    (box[c.group]||box.sent).appendChild(el);
+  });
+}
+
+/* ---------------- charts ---------------- */
+const CHARTDEFS=[
+  {sec:1,key:"vix",canvas:"cVix"},{sec:1,key:"spread",canvas:"cSpread"},{sec:1,key:"oil",canvas:"cOil"},
+  {sec:1,key:"gold",canvas:"cGold"},{sec:1,key:"gas",canvas:"cGas"},{sec:1,key:"copper",canvas:"cCopper"},
+  {sec:2,key:"nfp",canvas:"cNfp"},{sec:2,key:"unemp",canvas:"cUnemp"},{sec:2,key:"claims",canvas:"cClaims"},
+  {sec:3,key:"esi",canvas:"cEsi"},{sec:3,key:"conf",canvas:"cConf"}
+];
+function buildChartDom(){
+  CHARTDEFS.forEach(cd=>{
+    const el=document.createElement("div"); el.className="chart";
+    el.innerHTML='<h3>'+T.chartTitles[cd.key]+'</h3><div class="cw"><canvas id="'+cd.canvas+'"></canvas></div>'+
+                 '<div class="expl">'+T.expl[cd.key]+'</div>';
+    document.getElementById("charts-"+cd.sec).appendChild(el);
+  });
+}
+function drawCharts(S){
+  Chart.defaults.color=MUT; Chart.defaults.font.size=11;
+  const base=()=>({responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{x:{grid:{color:GRID},ticks:{maxTicksLimit:6}},y:{grid:{color:GRID}}}});
+  const leg=()=>({...base(),plugins:{legend:{display:true,labels:{boxWidth:12}}}});
+  const line=(id,l,v,c,f)=>new Chart(document.getElementById(id),{type:'line',
+    data:{labels:l,datasets:[{data:v,borderColor:c,backgroundColor:f,borderWidth:2,fill:!!f,tension:.25,pointRadius:0}]},options:base()});
+  line("cVix",S.vix.l,S.vix.v,'#e0245e','rgba(224,36,94,.12)');
+  line("cGold",S.gold.l,S.gold.v,'#C8A84B','rgba(200,168,75,.14)');
+  line("cGas",S.gas.l,S.gas.v,'#3b82f6','rgba(59,130,246,.12)');
+  line("cCopper",S.copper.l,S.copper.v,'#c2703d','rgba(194,112,61,.14)');
+  line("cUnemp",S.unemp.l,S.unemp.v,'#8b5cf6','rgba(139,92,246,.12)');
+  line("cClaims",S.claims.l,S.claims.v,'#ef4444','rgba(239,68,68,.10)');
+  line("cEsi",S.esi.l,S.esi.v,'#3b82f6','rgba(59,130,246,.12)');
+  new Chart(document.getElementById("cSpread"),{type:'line',data:{labels:S.btp.l,datasets:[
+    {label:T.legends.btp,data:S.btp.v,borderColor:'#e0245e',borderWidth:2,pointRadius:0,tension:.2},
+    {label:T.legends.oat,data:S.oat.v,borderColor:'#3ba776',borderWidth:2,pointRadius:0,tension:.2}]},options:leg()});
+  new Chart(document.getElementById("cOil"),{type:'line',data:{labels:S.brent.l,datasets:[
+    {label:T.legends.brent,data:S.brent.v,borderColor:'#C8A84B',borderWidth:2,pointRadius:0,tension:.2},
+    {label:T.legends.wti,data:S.wti.v,borderColor:'#2dd4bf',borderWidth:2,pointRadius:0,tension:.2}]},options:leg()});
+  new Chart(document.getElementById("cConf"),{type:'line',data:{labels:S.esi.l,datasets:[
+    {label:T.legends.ind,data:S.ind.v,borderColor:'#e0245e',borderWidth:2,pointRadius:0,tension:.2},
+    {label:T.legends.cons,data:S.cons.v,borderColor:'#3b82f6',borderWidth:2,pointRadius:0,tension:.2},
+    {label:T.legends.svc,data:S.svc.v,borderColor:'#3ba776',borderWidth:2,pointRadius:0,tension:.2}]},options:leg()});
+  new Chart(document.getElementById("cNfp"),{type:'bar',data:{labels:S.nfp.l,datasets:[
+    {data:S.nfp.v,backgroundColor:S.nfp.v.map(v=>v>=0?'#3ba776':'#e0245e')}]},options:base()});
+}
+
+function showError(msg){
+  const s=document.getElementById("status");
+  s.style.display="block"; s.textContent=msg;
+  document.getElementById("badge").textContent="—";
+}
+function pad(n){return String(n).padStart(2,"0");}
+function fmtGen(iso){
+  const g=new Date(iso);
+  const d=(LANG==="en")?(T.months[g.getUTCMonth()]+" "+g.getUTCDate()+", "+g.getUTCFullYear())
+        :(LANG==="it")?(pad(g.getUTCDate())+"/"+pad(g.getUTCMonth()+1)+"/"+g.getUTCFullYear())
+        :(pad(g.getUTCDate())+"."+pad(g.getUTCMonth()+1)+"."+g.getUTCFullYear());
+  return T.updated+" "+d+" "+pad(g.getUTCHours())+":"+pad(g.getUTCMinutes())+" UTC";
+}
+
+async function init(){
+  fillStatic();
+  try{
+    const d=(typeof window.__PRELOAD__!=="undefined")?window.__PRELOAD__
+            :await (await fetch("marktdaten.json?ts="+Date.now(),{cache:"no-store"})).json();
+    document.getElementById("badge").textContent=fmtGen(d.generatedAt);
+    renderCards(d.cards);
+    buildChartDom();
+    drawCharts(d.series);
+  }catch(e){
+    showError(T.statusErr+" ("+e.message+").");
+  }
+}
+init();
+</script>
+</body></html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PMI Monitor – Indici dei responsabili degli acquisti</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0D1F4E;            /* corporate navy — page background */
+    --navy:#0D1F4E; --navy-deep:#08163A;
+    --panel:#FFFFFF;         /* white cards */
+    --panel2:#EEF1F7;        /* light grey (flat badge / neutral) */
+    --line:rgba(13,31,78,.10);      /* hairline inside white cards */
+    --line-nav:rgba(255,255,255,.16); /* hairline on navy (foot/disclaimer) */
+    --txt:#EAEDF6;           /* light text on navy (header/foot) */
+    --ink:#1A2342;           /* dark text inside white cards */
+    --muted:#A7AFCB;         /* muted light on navy */
+    --muted-ink:#5A607A;     /* muted dark inside cards */
+    --green:#1E9E48; --greenbg:rgba(30,158,72,.12);
+    --red:#DD4A42;   --redbg:rgba(221,74,66,.12);
+    --gold:#C8A84B; --accent:#C8A84B;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  header{padding:24px 28px 8px}
+  h1{font-size:22px;margin:0 0 4px;font-weight:650;color:#fff}
+  .sub{color:var(--muted);font-size:13px;line-height:1.5}
+  .wrap{padding:0 28px 40px;max-width:1320px}
+  .tabs{display:flex;gap:8px;margin:18px 0 6px}
+  .tab{padding:9px 18px;border-radius:999px;background:rgba(255,255,255,.07);color:#CBD2E8;cursor:pointer;font-size:14px;font-weight:550;border:1px solid rgba(255,255,255,.18);user-select:none;transition:all .15s}
+  .tab:hover{background:rgba(255,255,255,.12)}
+  .tab.active{background:var(--gold);color:var(--navy-deep);border-color:var(--gold);font-weight:650}
+  .summary{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0 6px}
+  .pill{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--ink)}
+  .pill b{font-size:18px;font-weight:680}
+  .pill .g{color:var(--green)} .pill .r{color:var(--red)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px 8px;position:relative;overflow:hidden;color:var(--ink);box-shadow:0 4px 14px rgba(5,14,38,.20)}
+  .card .top{display:flex;justify-content:space-between;align-items:flex-start}
+  .ctry{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;color:var(--navy)}
+  .flag{font-size:20px;line-height:1}
+  .val{font-size:30px;font-weight:720;line-height:1;letter-spacing:-.5px}
+  .val.exp{color:var(--green)} .val.con{color:var(--red)}
+  .meta{display:flex;align-items:baseline;gap:8px;margin-top:3px;font-size:12.5px;color:var(--muted-ink)}
+  .delta{font-weight:650;padding:2px 7px;border-radius:6px;font-size:12px}
+  .delta.up{color:var(--green);background:var(--greenbg)}
+  .delta.down{color:var(--red);background:var(--redbg)}
+  .delta.flat{color:var(--muted-ink);background:var(--panel2)}
+  .chartbox{height:78px;margin-top:8px}
+  .state{position:absolute;top:0;left:0;width:4px;height:100%}
+  .state.exp{background:var(--green)} .state.con{background:var(--red)}
+  .foot{color:var(--muted);font-size:12px;margin-top:24px;line-height:1.6;border-top:1px solid var(--line-nav);padding-top:14px}
+  .legend{display:flex;gap:16px;font-size:12.5px;color:var(--muted);margin-top:10px;align-items:center}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+  .disclaimer{color:var(--muted);font-size:11px;line-height:1.55;margin-top:16px;padding-top:12px;border-top:1px solid var(--line-nav)}
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 PMI Monitor – Indici dei responsabili degli acquisti</h1>
+  <div class="sub">
+    PMI Manifatturiero e Servizi · ultimi 12 mesi (<span id="range"></span>)<br>
+    I valori &gt;50 segnalano espansione, &lt;50 contrazione. I PMI sono considerati un indicatore anticipatore dell'economia e tendono a essere informativi anche per l'andamento delle valute.<br>
+    Fonte: S&amp;P Global / HCOB / au Jibun Bank / RatingDog. Aggiornato al: <span id="asof"></span>.
+  </div>
+  <div class="legend">
+    <span><span class="dot" style="background:var(--green)"></span>Espansione (&gt;50)</span>
+    <span><span class="dot" style="background:var(--red)"></span>Contrazione (&lt;50)</span>
+    <span>— tratteggiato: soglia 50 · Δ = variazione rispetto al mese precedente</span>
+  </div>
+</header>
+<div class="wrap">
+  <div class="tabs">
+    <div class="tab active" data-t="manufacturing">Manifatturiero</div>
+    <div class="tab" data-t="services">Servizi</div>
+  </div>
+  <div class="summary" id="summary"></div>
+  <div class="grid" id="grid"></div>
+  <div class="foot" id="foot"></div>
+  <div class="disclaimer"><strong>Avviso legale:</strong> Tutti i dati sono forniti senza garanzia. I dati mostrati sono raccolti da fonti pubblicamente accessibili (tra cui S&amp;P Global) e hanno esclusivamente finalit&agrave; informative generali. Non costituiscono consulenza di investimento, finanziaria, legale o fiscale, n&eacute; alcuna raccomandazione ad agire o a operare. Non si fornisce alcuna garanzia in merito ad accuratezza, completezza, attualit&agrave; o disponibilit&agrave; dei dati. Nei limiti consentiti dalla legge, &egrave; esclusa ogni responsabilit&agrave; per danni o perdite, diretti o indiretti, derivanti dall&rsquo;uso, dall&rsquo;interpretazione o dall&rsquo;indisponibilit&agrave; di queste informazioni. &laquo;Purchasing Managers&rsquo; Index&trade;&raquo; e &laquo;PMI&reg;&raquo;, nonch&eacute; tutti i diritti su marchi, banche dati e altri diritti, restano di propriet&agrave; dei rispettivi titolari (in particolare S&amp;P Global). Non sussiste alcun rapporto con S&amp;P Global n&eacute; alcuna approvazione da parte della stessa.</div>
+</div>
+
+<script id="pmidata" type="application/json">
+{"meta": {"title": "Purchasing Managers' Indices (PMI) – Manufacturing & Services", "source": "S&P Global / HCOB / au Jibun Bank / RatingDog (via Trading Economics)", "unit": "Index (>50 = expansion, <50 = contraction)", "last_updated": "2026-07-06", "latest_month": "2026-06", "months": ["2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]}, "countries": [{"code": "US", "name": "USA", "flag": "🇺🇸", "manufacturing": [49.8, 53, 52, 52.5, 52.2, 51.8, 52.4, 51.6, 52.3, 54.5, 55.1, 53.9], "services": [55.7, 54.5, 54.2, 54.8, 54.1, 52.5, 52.7, 51.7, 49.8, 51, 50.7, 51.3]}, {"code": "EA", "name": "Eurozone", "flag": "🇪🇺", "manufacturing": [49.8, 50.7, 49.8, 50, 49.6, 48.8, 49.5, 50.8, 51.6, 52.2, 51.6, 51.4], "services": [51, 50.5, 51.3, 53, 53.6, 52.4, 51.6, 51.9, 50.2, 47.6, 47.7, 49.4]}, {"code": "DE", "name": "Germany", "flag": "🇩🇪", "manufacturing": [49.1, 49.8, 49.5, 49.6, 48.2, 47, 49.1, 50.9, 52.2, 51.4, 50.1, 50.3], "services": [50.6, 49.3, 51.5, 54.6, 53.1, 52.7, 52.4, 53.5, 50.9, 46.9, 48.1, 48.6]}, {"code": "FR", "name": "France", "flag": "🇫🇷", "manufacturing": [48.2, 50.4, 48.2, 48.8, 47.8, 50.7, 51.2, 50.1, 50, 52.8, 49.7, 51.2], "services": [48.5, 49.8, 48.5, 48, 51.4, 50.1, 48.4, 49.6, 48.8, 46.5, 44.3, 46.8]}, {"code": "IT", "name": "Italy", "flag": "🇮🇹", "manufacturing": [49.8, 50.4, 49, 49.9, 50.6, 47.9, 48.1, 50.6, 51.3, 52.1, 52.9, 52.2], "services": [52.3, 51.5, 52.5, 54, 55, 51.5, 52.9, 52.3, 48.8, 49.8, 49.4, 50.2]}, {"code": "ES", "name": "Spain", "flag": "🇪🇸", "manufacturing": [51.9, 54.3, 51.5, 52.1, 51.5, 49.6, 49.2, 50, 48.7, 51.7, 51.2, 49.7], "services": [55.1, 53.2, 54.3, 56.6, 55.6, 57.1, 53.5, 51.9, 53.3, 47.9, 50.1, 54.2]}, {"code": "GB", "name": "United Kingdom", "flag": "🇬🇧", "manufacturing": [48, 47, 46.2, 49.7, 50.2, 50.6, 51.8, 51.7, 51, 53.7, 53.9, 52.5], "services": [51.8, 54.2, 50.8, 52.3, 51.3, 51.4, 54, 53.9, 50.5, 52.7, 49.3, 48.8]}, {"code": "IE", "name": "Ireland", "flag": "🇮🇪", "manufacturing": [53.2, 51.6, 51.8, 50.9, 52.8, 52.2, 52.2, 53.1, 53.7, 54.9, 55.9, 54.9], "services": [50.9, 50.6, 53.5, 56.7, 58.5, 54.8, 54.5, 51.8, 50.7, 49.7, 50.8, 54.2]}, {"code": "JP", "name": "Japan", "flag": "🇯🇵", "manufacturing": [48.9, 49.7, 48.5, 48.2, 48.7, 50, 51.5, 53, 51.6, 55.1, 54.5, 54.8], "services": [53.6, 53.1, 53.3, 53.1, 53.2, 51.6, 53.7, 53.8, 53.4, 51, 50, 52.2]}, {"code": "CN", "name": "China", "flag": "🇨🇳", "manufacturing": [49.5, 50.5, 51.2, 50.6, 49.9, 50.1, 50.3, 52.1, 50.8, 52.2, 51.8, 51.7], "services": [52.6, 53, 52.9, 52.6, 52.1, 52, 52.3, 56.7, 52.1, 52.6, 54.4, 54.1]}, {"code": "IN", "name": "India", "flag": "🇮🇳", "manufacturing": [59.1, 59.3, 57.7, 59.2, 56.6, 55, 55.4, 56.9, 53.9, 54.7, 55, 54.5], "services": [60.5, 62.9, 60.9, 58.9, 59.8, 58, 58.5, 58.1, 57.5, 58.8, 59.8, 57.4]}, {"code": "AU", "name": "Australia", "flag": "🇦🇺", "manufacturing": [51.3, 53, 51.4, 49.7, 51.6, 51.6, 52.3, 51, 49.8, 51.3, 50.7, 51.5], "services": [54.1, 55.8, 52.4, 52.5, 52.8, 51.1, 56.3, 52.8, 46.3, 50.7, 48.7, 50.5]}, {"code": "BR", "name": "Brazil", "flag": "🇧🇷", "manufacturing": [48.2, 47.7, 46.5, 48.2, 48.8, 47.6, 47, 47.3, 49, 52.6, 49.1, 50.8], "services": [46.3, 49.3, 46.3, 47.7, 50.1, 53.7, 51.3, 53.1, 50.1, 52.3, 50.4, 51.3]}, {"code": "RU", "name": "Russia", "flag": "🇷🇺", "manufacturing": [47, 48.7, 48.2, 48, 48.3, 48.1, 49.4, 49.5, 48.3, 48.1, 48.8, 50.3], "services": [48.6, 50, 47, 51.7, 52.2, 52.3, 53.1, 51.3, 49.5, 49.7, 48.7, 48.2]}, {"code": "CA", "name": "Canada", "flag": "🇨🇦", "manufacturing": [46.1, 48.3, 47.7, 49.6, 48.4, 48.6, 50.4, 51, 50, 53.3, 52.9, 53], "services": null}, {"code": "MX", "name": "Mexico", "flag": "🇲🇽", "manufacturing": [49.1, 50.2, 49.6, 49.5, 47.3, 46.1, 46.3, 47.1, 48.9, 47.7, 49.6, 51.3], "services": null}, {"code": "KR", "name": "South Korea", "flag": "🇰🇷", "manufacturing": [48, 48.3, 50.7, 49.4, 49.4, 50.1, 51.2, 51.1, 52.6, 53.6, 54.8, 52.1], "services": null}]}
+</script>
+<script>
+const MON = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"];
+const NAMES = {"US": "USA", "EA": "Eurozona", "DE": "Germania", "FR": "Francia", "IT": "Italia", "ES": "Spagna", "GB": "Regno Unito", "IE": "Irlanda", "JP": "Giappone", "CN": "Cina", "IN": "India", "AU": "Australia", "BR": "Brasile", "RU": "Russia", "CA": "Canada", "MX": "Messico", "KR": "Corea del Sud"};
+const L = {"tracked": "Monitorati", "countries": "paesi", "exp": "In espansione", "con": "In contrazione", "cur": "Mese corrente", "verified": "Dati verificati il", "health_warn": "Qualità dei dati: rilevate anomalie in alcune serie", "health_error": "Qualità dei dati: aggiornamento fallito – valori non verificabili", "health_stale": "Dati potenzialmente obsoleti (ultimo aggiornamento: {d})", "foot": "Nota: i valori sono gli ultimi PMI headline pubblicati nei comunicati ufficiali. Cina manifatturiero = RatingDog/Caixin, Giappone = au Jibun Bank, paesi dell'area euro = HCOB, altri = S&amp;P Global. Canada, Messico e Corea del Sud: solo PMI manifatturiero. Attribuzione: S&amp;P Global. Fonte dati: <code>pmi_data.json</code>."};
+let DATA, M, shortM, current='manufacturing', charts=[];
+
+async function loadData(){
+  try{ const r = await fetch('pmi_data.json',{cache:'no-store'}); if(r.ok) return await r.json(); }catch(e){}
+  return JSON.parse(document.getElementById('pmidata').textContent);
+}
+function fmtDate(iso){const [y,mo,d]=iso.split('-');return (+d)+' '+MON[+mo-1]+' '+y;}
+function initHeader(){
+  document.getElementById('range').textContent = shortM[0]+' – '+shortM[shortM.length-1];
+  document.getElementById('asof').textContent = fmtDate(DATA.meta.last_updated);
+}
+function fmt(v){return (Math.round(v*10)/10).toFixed(1);}
+function deltaHtml(s){const a=s[s.length-1],b=s[s.length-2];const d=a-b;const cls=d>0.05?'up':(d<-0.05?'down':'flat');const ar=d>0.05?'▲':(d<-0.05?'▼':'▬');return `<span class="delta ${cls}">${ar} ${d>0?'+':''}${fmt(d)}</span>`;}
+function render(){
+  charts.forEach(c=>c.destroy()); charts=[];
+  const grid=document.getElementById('grid'); grid.innerHTML='';
+  const list=DATA.countries.filter(c=>c[current]);
+  let exp=0,con=0; list.forEach(c=>{const v=c[current][c[current].length-1]; v>=50?exp++:con++;});
+  document.getElementById('summary').innerHTML=
+    `<div class="pill">${L.tracked}<br><b>${list.length}</b> ${L.countries}</div>`+
+    `<div class="pill">${L.exp}<br><b class="g">${exp}</b></div>`+
+    `<div class="pill">${L.con}<br><b class="r">${con}</b></div>`+
+    `<div class="pill">${L.cur}<br><b>${shortM[shortM.length-1]}</b></div>`;
+  list.sort((a,b)=>b[current][b[current].length-1]-a[current][a[current].length-1]);
+  list.forEach((c,i)=>{
+    const s=c[current]; const last=s[s.length-1]; const ex=last>=50;
+    const card=document.createElement('div'); card.className='card';
+    card.innerHTML=`<div class="state ${ex?'exp':'con'}"></div>
+      <div class="top"><div>
+        <div class="ctry"><span class="flag">${c.flag}</span>${c.name}</div>
+        <div class="meta">${deltaHtml(s)}<span>${shortM[shortM.length-1]}</span></div>
+      </div><div class="val ${ex?'exp':'con'}">${fmt(last)}</div></div>
+      <div class="chartbox"><canvas id="ch${i}"></canvas></div>`;
+    grid.appendChild(card);
+    const col=ex?'#1E9E48':'#DD4A42';
+    charts.push(new Chart(document.getElementById('ch'+i),{type:'line',
+      data:{labels:shortM,datasets:[
+        {data:s,borderColor:col,borderWidth:2,tension:.3,fill:true,backgroundColor:ex?'rgba(30,158,72,.12)':'rgba(221,74,66,.12)',pointRadius:s.map((_,j)=>j===s.length-1?3.5:0),pointBackgroundColor:col},
+        {data:s.map(()=>50),borderColor:'#9AA2BC',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,
+        plugins:{legend:{display:false},tooltip:{enabled:true,callbacks:{title:i=>shortM[i[0].dataIndex],label:i=>i.datasetIndex===0?'PMI '+fmt(i.raw):''},filter:i=>i.datasetIndex===0}},
+        scales:{x:{display:false},y:{display:false,min:Math.min(44,Math.min(...s)-1),max:Math.max(56,Math.max(...s)+1)}}}}));
+  });
+  document.getElementById('foot').innerHTML=L.foot;
+}
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active'); current=t.dataset.t; render();}));
+(async function(){
+  DATA=await loadData();
+  DATA.countries.forEach(c=>{ if(NAMES[c.code]) c.name=NAMES[c.code]; });
+  M=DATA.meta.months; shortM=M.map(m=>{const [y,mo]=m.split('-');return MON[+mo-1]+" "+y.slice(2);});
+  initHeader(); render();
+})();
+</script>
+</body>
+</html>
