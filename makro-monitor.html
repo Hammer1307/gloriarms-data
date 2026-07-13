@@ -41,7 +41,7 @@ footer p{margin:8px 0}footer b{color:#aab6d0}
 #status{display:none;background:#3a1720;border:1px solid #e0245e;color:#ffb3c1;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:13px}
 </style></head><body>
 <header><div class="hwrap htop">
-  <div><h1>Makro-Monitor <span class="badge" id="badge"></span></h1><div class="sub" id="sub"></div></div>
+  <div><h1><span id="mtitle">Makro-Monitor</span> <span class="badge" id="badge"></span></h1><div class="sub" id="sub"></div></div>
   <div class="langsw" id="langsw"></div>
 </div></header>
 <div class="wrap">
@@ -63,7 +63,7 @@ footer p{margin:8px 0}footer b{color:#aab6d0}
 <script>
 /* ---------------- i18n ---------------- */
 const I18N={
- de:{
+ de:{title:"Makro-Monitor",
   asOf:"Stand:", updated:"aktualisiert",
   statusErr:"Die aktuellen Daten konnten nicht geladen werden",
   headerSub:"Nur lizenzfreie Quellen · Stand der Daten je Indikator direkt auf der Kachel.",
@@ -95,7 +95,7 @@ const I18N={
    disclaimer:"<b>Haftungsausschluss:</b> Die auf dieser Seite dargestellten Markt- und Wirtschaftsdaten stammen aus öffentlich zugänglichen Drittquellen und dienen ausschließlich der allgemeinen Information. Sie stellen keine Anlage-, Rechts- oder Steuerberatung dar und sind weder ein Angebot noch eine Aufforderung zum Kauf oder Verkauf von Finanzinstrumenten. Trotz sorgfältiger Aufbereitung wird keine Gewähr für Richtigkeit, Vollständigkeit und Aktualität der Daten übernommen; Werte können verzögert, nachträglich revidiert oder fehlerhaft sein. Eine Haftung für Schäden, die aus der Nutzung oder Nichtnutzung dieser Informationen entstehen, ist – soweit gesetzlich zulässig – ausgeschlossen. Vergangene Entwicklungen sind kein verlässlicher Indikator für künftige Ergebnisse. Entscheidungen auf Basis dieser Daten treffen die Nutzerinnen und Nutzer eigenverantwortlich."
   }
  },
- en:{
+ en:{title:"Macro Monitor",
   asOf:"As of:", updated:"updated",
   statusErr:"Current data could not be loaded",
   headerSub:"License-free sources only · each indicator's data date is shown on its tile.",
@@ -127,7 +127,7 @@ const I18N={
    disclaimer:"<b>Disclaimer:</b> The market and economic data shown here come from publicly available third-party sources and are provided for general information only. They do not constitute investment, legal or tax advice and are neither an offer nor a solicitation to buy or sell any financial instrument. Despite careful preparation, no warranty is given as to the accuracy, completeness or timeliness of the data; values may be delayed, subsequently revised or erroneous. Liability for any damages arising from the use or non-use of this information is excluded to the extent permitted by law. Past performance is not a reliable indicator of future results. Users act on their own responsibility when making decisions based on this data."
   }
  },
- it:{
+ it:{title:"Macro Monitor",
   asOf:"Dato al:", updated:"aggiornato",
   statusErr:"Impossibile caricare i dati aggiornati",
   headerSub:"Solo fonti libere da licenza · la data del dato è indicata su ogni riquadro.",
@@ -191,7 +191,7 @@ function asofLabel(c){
 
 /* ---------------- static text ---------------- */
 function fillStatic(){
-  document.getElementById("sub").textContent=T.headerSub;
+  var _mt=document.getElementById("mtitle"); if(_mt&&T.title){_mt.textContent=T.title; document.title=T.title;} document.getElementById("sub").textContent=T.headerSub;
   document.getElementById("sec1").textContent=T.sections.s1;
   document.getElementById("sec2").textContent=T.sections.s2;
   document.getElementById("sec3").textContent=T.sections.s3;
@@ -306,6 +306,7 @@ init();
   if(window.ResizeObserver){try{new ResizeObserver(post).observe(document.body);}catch(e){}}
   document.addEventListener('click',function(){setTimeout(post,60);setTimeout(post,320);},true);
   [200,700,1500,3000].forEach(function(t){setTimeout(post,t);});
+  var _n=0,_iv=setInterval(function(){post();if(++_n>30)clearInterval(_iv);},500);
 })();
 </script>
 </body></html>
