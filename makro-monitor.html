@@ -297,4 +297,15 @@ async function init(){
 }
 init();
 </script>
+<script>
+(function(){
+  function h(){return Math.max(document.body.scrollHeight,document.documentElement.scrollHeight,document.body.offsetHeight);}
+  function post(){try{parent.postMessage({type:'glr-embed-height',h:h()},'*');}catch(e){}}
+  window.addEventListener('load',post);
+  window.addEventListener('resize',post);
+  if(window.ResizeObserver){try{new ResizeObserver(post).observe(document.body);}catch(e){}}
+  document.addEventListener('click',function(){setTimeout(post,60);setTimeout(post,320);},true);
+  [200,700,1500,3000].forEach(function(t){setTimeout(post,t);});
+})();
+</script>
 </body></html>
