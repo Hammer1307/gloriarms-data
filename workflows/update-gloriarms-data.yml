@@ -1,0 +1,57 @@
+name: Update GLORIARMS data (Macro + Business Cycle)
+
+# Runs in the DATA repo (Hammer1307/gloriarms-data). Builds the JSON files the
+# website fetches at build time, commits them, then triggers a site rebuild.
+
+on:
+  schedule:
+    - cron: "20 6 * * *"      # daily 06:20 UTC — market/labour tiles (Macro)
+    - cron: "40 6 3 * *"      # monthly (3rd) — OECD CLI/BCI (Business Cycle)
+  workflow_dispatch:          # manual "Run workflow" button
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install -r scripts/requirements.txt
+
+      # --- Macro Monitor: marktdaten.json -------------------------------------
+      # Your existing updater, now importing free_commodity_sources (Yahoo removed).
+      # Adjust the filename if yours differs.
+      - name: Build marktdaten.json (Macro)
+        env:
+          BCCH_USER:           ${{ secrets.BCCH_USER }}
+          BCCH_PASS:           ${{ secrets.BCCH_PASS }}
+          COCHILCO_GOLD_URL:   ${{ secrets.COCHILCO_GOLD_URL }}
+          RESEND_API_KEY:      ${{ secrets.RESEND_API_KEY }}
+          ALERT_TO:            ${{ secrets.ALERT_TO }}
+          ALERT_FROM:          ${{ secrets.ALERT_FROM }}
+        run: python scripts/update_marktdaten.py
+
+      # --- Business Cycle Monitor: businesscycle_data.json --------------------
+      # No API key needed (public FRED CSV endpoint + EU Commission).
+      - name: Build businesscycle_data.json (Business Cycle)
+        run: python scripts/businesscycle_updater.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name  "gloriarms-data-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A marktdaten.json businesscycle_data.json || true
+          git commit -m "data: refresh $(date -u +%F) [skip ci]" || echo "no changes"
+          git push
+
+      # --- Trigger the website rebuild (Cloudflare Pages deploy hook) ----------
+      - name: Trigger site rebuild
+        if: success()
+        run: curl -fsS -X POST "${{ secrets.SITE_BUILD_HOOK_URL }}" || echo "hook failed"
