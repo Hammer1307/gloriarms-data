@@ -24,6 +24,8 @@ import os, sys, io, csv, json, zipfile, datetime, traceback
 import requests
 
 FRED = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={id}&cosd={start}"
+FRED_API = ("https://api.stlouisfed.org/fred/series/observations"
+            "?series_id={id}&observation_start={start}&api_key={key}&file_type=json")
 YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=2y"
 EC_BASE = "https://ec.europa.eu/economy_finance/db_indicators/surveys/documents/series/nace2_ecfin_{vint}/main_indicators_sa_nace2.zip"
 UA = {"User-Agent": "Mozilla/5.0 (compatible; MakroMonitor/1.0)"}
@@ -50,12 +52,26 @@ def _get(url, attempts=3, timeout=TIMEOUT):
     raise last
 
 def fred(series, start="2021-01-01"):
-    r = _get(FRED.format(id=series, start=start))
+    """Offizielle FRED-API, wenn FRED_API_KEY gesetzt ist (empfohlen!).
+    Ohne Key Rueckfall auf fredgraph.csv - dieser Web-UI-Endpunkt wird aus
+    Rechenzentren (z. B. GitHub-Actions-Runner) haeufig blockiert bzw. haengt."""
+    key = os.environ.get("FRED_API_KEY")
     out = []
-    for row in csv.reader(io.StringIO(r.text)):
-        if len(row) >= 2 and row[1] not in (".", "", "value"):
-            try: out.append([row[0], float(row[1])])
-            except ValueError: pass
+    if key:
+        r = _get(FRED_API.format(id=series, start=start, key=key))
+        for o in r.json().get("observations", []):
+            v = o.get("value")
+            if v not in (".", "", None):
+                try: out.append([o["date"], float(v)])
+                except (ValueError, TypeError): pass
+    else:
+        print("[warn] FRED_API_KEY nicht gesetzt - nutze fredgraph.csv "
+              "(aus Rechenzentren oft blockiert)", file=sys.stderr)
+        r = _get(FRED.format(id=series, start=start))
+        for row in csv.reader(io.StringIO(r.text)):
+            if len(row) >= 2 and row[1] not in (".", "", "value"):
+                try: out.append([row[0], float(row[1])])
+                except ValueError: pass
     if not out:
         raise ValueError("FRED %s: keine Datenpunkte" % series)
     return out
