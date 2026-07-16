@@ -44,14 +44,20 @@ jobs:
           ALERT_TO: ${{ secrets.ALERT_TO }}
         run: python update_marktdaten.py
 
-      - name: Aktualisierte JSON committen (nur bei Aenderung)
+      # Business Cycle Monitor: OECD-SDMX (CLI + BCI) + EU-Kommission (ESI fuer
+      # Eurozone/Irland). Braucht keinen Key. Bricht ab, wenn zu wenige Laender
+      # Daten liefern -> dann wird nichts committet, letzter guter Stand bleibt.
+      - name: Business-Cycle-Daten aktualisieren
+        run: python businesscycle_updater.py
+
+      - name: Aktualisierte JSON-Dateien committen (nur bei Aenderung)
         run: |
-          if [ -n "$(git status --porcelain marktdaten.json)" ]; then
+          if [ -n "$(git status --porcelain marktdaten.json businesscycle_data.json)" ]; then
             git config user.name "gloriarms-data-bot"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add marktdaten.json
-            git commit -m "Makro-Update $(date -u +%Y-%m-%dT%H:%MZ)"
+            git add marktdaten.json businesscycle_data.json
+            git commit -m "Daten-Update $(date -u +%Y-%m-%dT%H:%MZ)"
             git push
           else
-            echo "Keine Aenderung an marktdaten.json - nichts zu committen."
+            echo "Keine Aenderungen - nichts zu committen."
           fi
