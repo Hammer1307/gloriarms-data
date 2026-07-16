@@ -48,6 +48,10 @@ jobs:
       # Eurozone/Irland). Braucht keinen Key. Bricht ab, wenn zu wenige Laender
       # Daten liefern -> dann wird nichts committet, letzter guter Stand bleibt.
       - name: Business-Cycle-Daten aktualisieren
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_FROM: ${{ secrets.ALERT_FROM }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
         run: python businesscycle_updater.py
 
       - name: Aktualisierte JSON-Dateien committen (nur bei Aenderung)
