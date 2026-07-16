@@ -29,12 +29,28 @@ EC_BASE = "https://ec.europa.eu/economy_finance/db_indicators/surveys/documents/
 UA = {"User-Agent": "Mozilla/5.0 (compatible; MakroMonitor/1.0)"}
 MONTHS_DE = ["Jan","Feb","Maer","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"]
 MONTHS_DE[2] = "Mär"
-TIMEOUT = 40
+TIMEOUT = 60
 
 # ---------------------------------------------------------------- fetch helpers
+def _get(url, attempts=3, timeout=TIMEOUT):
+    """HTTP-GET mit Wiederholversuchen. Schuetzt gegen Timeouts/Aussetzer der Quellen."""
+    import time as _t
+    last = None
+    for i in range(attempts):
+        try:
+            r = requests.get(url, headers=UA, timeout=timeout)
+            r.raise_for_status()
+            return r
+        except Exception as e:
+            last = e
+            if i < attempts - 1:
+                print("[warn] Abruf Versuch %d/%d fehlgeschlagen (%s) - neuer Versuch: %s"
+                      % (i + 1, attempts, e, url[:80]), file=sys.stderr)
+                _t.sleep(3 * (i + 1))
+    raise last
+
 def fred(series, start="2021-01-01"):
-    r = requests.get(FRED.format(id=series, start=start), headers=UA, timeout=TIMEOUT)
-    r.raise_for_status()
+    r = _get(FRED.format(id=series, start=start))
     out = []
     for row in csv.reader(io.StringIO(r.text)):
         if len(row) >= 2 and row[1] not in (".", "", "value"):
@@ -44,28 +60,15 @@ def fred(series, start="2021-01-01"):
         raise ValueError("FRED %s: keine Datenpunkte" % series)
     return out
 
-def yahoo(sym, attempts=3):
-    """Yahoo-Abruf mit Wiederholversuchen (Rechenzentrums-IPs werden gelegentlich gedrosselt)."""
-    import time as _t
-    last = None
-    for i in range(attempts):
-        try:
-            r = requests.get(YAHOO.format(sym=sym), headers=UA, timeout=TIMEOUT)
-            r.raise_for_status()
-            res = r.json()["chart"]["result"][0]
-            ts, cl = res["timestamp"], res["indicators"]["quote"][0]["close"]
-            out = [[datetime.datetime.utcfromtimestamp(t).strftime("%Y-%m-%d"), round(c, 3)]
-                   for t, c in zip(ts, cl) if c is not None]
-            if not out:
-                raise ValueError("Yahoo %s: keine Datenpunkte" % sym)
-            return out
-        except Exception as e:
-            last = e
-            if i < attempts - 1:
-                print("[warn] Yahoo %s Versuch %d/%d fehlgeschlagen (%s) - neuer Versuch"
-                      % (sym, i + 1, attempts, e), file=sys.stderr)
-                _t.sleep(2 * (i + 1))
-    raise last
+def yahoo(sym):
+    r = _get(YAHOO.format(sym=sym))
+    res = r.json()["chart"]["result"][0]
+    ts, cl = res["timestamp"], res["indicators"]["quote"][0]["close"]
+    out = [[datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%d"), round(c, 3)]
+           for t, c in zip(ts, cl) if c is not None]
+    if not out:
+        raise ValueError("Yahoo %s: keine Datenpunkte" % sym)
+    return out
 
 def daily(yahoo_sym, fred_id):
     """Tagesaktueller Marktpreis: bevorzugt Yahoo (Boersenschlusskurs), sonst FRED."""
@@ -79,8 +82,7 @@ def ecb_irs(area, start="2021-01"):
     """Monatliche 10J-Konvergenzrendite (Maastricht) der EZB, ~1 Monat Nachlauf."""
     url = ("https://data-api.ecb.europa.eu/service/data/IRS/"
            "M.%s.L.L40.CI.0000.EUR.N.Z?startPeriod=%s&format=csvdata") % (area, start)
-    r = requests.get(url, headers=UA, timeout=TIMEOUT)
-    r.raise_for_status()
+    r = _get(url)
     rows = list(csv.reader(io.StringIO(r.text)))
     hdr = rows[0]; ti = hdr.index("TIME_PERIOD"); vi = hdr.index("OBS_VALUE")
     out = []
@@ -231,7 +233,7 @@ def build_payload(d):
     }
     return {
         "schema": 2,
-        "generatedAt": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "ecVintage": d.get("_vintage", ""),
         "cards": cards,
         "series": series,
@@ -295,7 +297,7 @@ if __name__ == "__main__":
     except Exception as e:
         msg = ("Makro-Monitor Update FEHLGESCHLAGEN um %s UTC.\n\n%s\n\n"
                "Es wurde KEINE neue Datei geschrieben - der letzte gute Stand bleibt online.\n\n"
-               "Details:\n%s") % (datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M"), e, traceback.format_exc())
+               "Details:\n%s") % (datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M"), e, traceback.format_exc())
         print(msg, file=sys.stderr)
         send_alert("Makro-Monitor: Datenupdate fehlgeschlagen", msg)
         sys.exit(1)
