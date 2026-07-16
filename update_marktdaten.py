@@ -44,16 +44,28 @@ def fred(series, start="2021-01-01"):
         raise ValueError("FRED %s: keine Datenpunkte" % series)
     return out
 
-def yahoo(sym):
-    r = requests.get(YAHOO.format(sym=sym), headers=UA, timeout=TIMEOUT)
-    r.raise_for_status()
-    res = r.json()["chart"]["result"][0]
-    ts, cl = res["timestamp"], res["indicators"]["quote"][0]["close"]
-    out = [[datetime.datetime.utcfromtimestamp(t).strftime("%Y-%m-%d"), round(c, 3)]
-           for t, c in zip(ts, cl) if c is not None]
-    if not out:
-        raise ValueError("Yahoo %s: keine Datenpunkte" % sym)
-    return out
+def yahoo(sym, attempts=3):
+    """Yahoo-Abruf mit Wiederholversuchen (Rechenzentrums-IPs werden gelegentlich gedrosselt)."""
+    import time as _t
+    last = None
+    for i in range(attempts):
+        try:
+            r = requests.get(YAHOO.format(sym=sym), headers=UA, timeout=TIMEOUT)
+            r.raise_for_status()
+            res = r.json()["chart"]["result"][0]
+            ts, cl = res["timestamp"], res["indicators"]["quote"][0]["close"]
+            out = [[datetime.datetime.utcfromtimestamp(t).strftime("%Y-%m-%d"), round(c, 3)]
+                   for t, c in zip(ts, cl) if c is not None]
+            if not out:
+                raise ValueError("Yahoo %s: keine Datenpunkte" % sym)
+            return out
+        except Exception as e:
+            last = e
+            if i < attempts - 1:
+                print("[warn] Yahoo %s Versuch %d/%d fehlgeschlagen (%s) - neuer Versuch"
+                      % (sym, i + 1, attempts, e), file=sys.stderr)
+                _t.sleep(2 * (i + 1))
+    raise last
 
 def daily(yahoo_sym, fred_id):
     """Tagesaktueller Marktpreis: bevorzugt Yahoo (Boersenschlusskurs), sonst FRED."""
