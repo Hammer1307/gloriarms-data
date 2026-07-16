@@ -39,7 +39,7 @@ veroeffentlicht wird ("letzter guter Stand" bleibt online).
 Benoetigt: requests, openpyxl.   Lauf: python businesscycle_updater.py
 """
 
-import os, sys, io, csv, json, zipfile, time, datetime as dt
+import os, sys, io, csv, json, zipfile, time, traceback, datetime as dt
 import requests
 
 OUT = os.environ.get("BC_OUT", "businesscycle_data.json")
@@ -156,6 +156,22 @@ def ec_esi():
     return {k: {} for k in EC_PROXY}
 
 
+def send_alert(subject, body):
+    """E-Mail-Benachrichtigung via Resend. Ohne Secrets wird uebersprungen."""
+    key = os.environ.get("RESEND_API_KEY")
+    to = os.environ.get("ALERT_TO"); frm = os.environ.get("ALERT_FROM")
+    if not (key and to and frm):
+        print("[ALERT] Resend nicht konfiguriert - Mail uebersprungen.", file=sys.stderr)
+        return
+    try:
+        r = requests.post("https://api.resend.com/emails",
+            headers={"Authorization": "Bearer %s" % key, "Content-Type": "application/json"},
+            json={"from": frm, "to": [to], "subject": subject, "text": body}, timeout=30)
+        print("[ALERT] Resend status %s" % r.status_code, file=sys.stderr)
+    except Exception as e:
+        print("[ALERT] Mailversand fehlgeschlagen: %s" % e, file=sys.stderr)
+
+
 def build():
     start = (dt.date.today() - dt.timedelta(days=40 * 20)).strftime("%Y-%m")
 
@@ -168,7 +184,7 @@ def build():
     cand = sorted(cli_maps.get("US", {}).keys()) or sorted(
         {k for m in cli_maps.values() for k in m})
     if not cand:
-        raise SystemExit("ERROR: keine CLI-Daten geladen - OECD-API/Serien pruefen.")
+        raise RuntimeError("keine CLI-Daten geladen - OECD-API/Serien pruefen.")
     latest = cand[-1]
 
     y, m = int(latest[:4]), int(latest[5:7])
@@ -199,8 +215,8 @@ def build():
     cli_ok = sum(1 for c in countries if any(v is not None for v in c["cli"]))
     bci_ok = sum(1 for c in countries if any(v is not None for v in c["bci"]))
     if cli_ok < MIN_CLI_OK:
-        raise SystemExit(
-            "ERROR: nur %d von %d Laendern mit CLI-Daten (Minimum %d) - Abbruch, damit keine "
+        raise RuntimeError(
+            "nur %d von %d Laendern mit CLI-Daten (Minimum %d) - Abbruch, damit keine "
             "leere/lueckenhafte Datei veroeffentlicht wird." % (cli_ok, len(countries), MIN_CLI_OK))
 
     data = {
@@ -225,4 +241,14 @@ def build():
 
 
 if __name__ == "__main__":
-    build()
+    try:
+        build()
+    except Exception as e:
+        msg = ("Business-Cycle-Update FEHLGESCHLAGEN um %s UTC.\n\n%s\n\n"
+               "Es wurde KEINE neue businesscycle_data.json geschrieben - der letzte gute "
+               "Stand bleibt online.\n\nDetails:\n%s"
+               % (dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M"), e,
+                  traceback.format_exc()))
+        print(msg, file=sys.stderr)
+        send_alert("Makro-Monitor: Business-Cycle-Update fehlgeschlagen", msg)
+        sys.exit(1)
