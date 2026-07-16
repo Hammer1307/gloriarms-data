@@ -36,6 +36,9 @@ jobs:
       # bricht dieser Schritt ab -> es wird nichts committet -> letzter guter Stand bleibt.
       - name: Daten aktualisieren
         env:
+          # Offizielle FRED-API (kostenloser Key). OHNE diesen Key faellt das Skript
+          # auf fredgraph.csv zurueck - und das blockiert FRED von GitHub-Runnern.
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ALERT_FROM: ${{ secrets.ALERT_FROM }}
           ALERT_TO: ${{ secrets.ALERT_TO }}
