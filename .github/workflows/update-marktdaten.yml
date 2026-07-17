@@ -19,7 +19,7 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20   # inkl. Wartezeit, bis Pages/raw die neue JSON ausliefern
     steps:
       - name: Repo auschecken
         uses: actions/checkout@v4
@@ -69,10 +69,39 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # WICHTIG: Die Webseite backt die Daten zur BAUZEIT ein (Astro-Build) und
-      # laedt sie NICHT zur Laufzeit. Ohne diesen Rebuild zeigt gloriarms.com
-      # dauerhaft den Stand des letzten Website-Builds - egal wie frisch die
-      # JSON im Repo ist. Genau das war der Grund fuer "Updated: July 12".
+      # WICHTIG: Ohne diesen Schritt haengt die Webseite dauerhaft EINEN Lauf
+      # hinterher. Grund: Der Commit ist zwar sofort in main, aber GitHub Pages
+      # braucht ~1 Minute, bis es die neue JSON ausliefert. Feuert der Deploy-Hook
+      # direkt nach dem Commit, holt sich der Astro-Build noch die ALTE Datei.
+      # Deshalb warten wir, bis die neue Datei wirklich abrufbar ist, und stossen
+      # den Rebuild erst danach an.
+      - name: Warten bis die neue JSON oeffentlich abrufbar ist
+        if: steps.commit.outputs.changed == 'true'
+        run: |
+          WANT=$(python3 -c "import json;print(json.load(open('marktdaten.json'))['generatedAt'])")
+          echo "Erwarteter Stand: $WANT"
+          for URL in \
+            "https://hammer1307.github.io/gloriarms-data/marktdaten.json" \
+            "https://raw.githubusercontent.com/Hammer1307/gloriarms-data/main/marktdaten.json"
+          do
+            OK=0
+            for i in $(seq 1 30); do   # bis zu 5 Minuten je Quelle
+              GOT=$(curl -fsS -H 'Cache-Control: no-cache' "$URL?cb=$(date +%s)" \
+                    | python3 -c "import sys,json;print(json.load(sys.stdin).get('generatedAt',''))" 2>/dev/null || echo "")
+              if [ "$GOT" = "$WANT" ]; then
+                echo "OK  $URL  (nach $((i*10))s)"
+                OK=1
+                break
+              fi
+              sleep 10
+            done
+            if [ "$OK" != "1" ]; then
+              echo "FEHLER: $URL liefert nach 5 Minuten immer noch '$GOT' statt '$WANT'."
+              echo "Rebuild wird NICHT angestossen - sonst baut die Webseite den alten Stand ein."
+              exit 1
+            fi
+          done
+
       - name: Webseiten-Rebuild anstossen (Deploy-Hook)
         if: steps.commit.outputs.changed == 'true'
         run: |
@@ -81,4 +110,4 @@ jobs:
             exit 1
           fi
           curl -fsS -X POST "${{ secrets.SITE_BUILD_HOOK_URL }}" > /dev/null
-          echo "Webseiten-Rebuild angestossen."
+          echo "Webseiten-Rebuild angestossen (neue Daten sind nachweislich abrufbar)."
