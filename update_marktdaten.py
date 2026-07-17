@@ -12,11 +12,19 @@ Design-Prinzipien:
   nichts hoch, der alte Stand in R2 bleibt unangetastet.
 - Bei jedem Fehlschlag geht eine E-Mail-Benachrichtigung raus (Resend API).
 
-Tagesaktuelle Marktpreise (VIX, Brent, WTI, Erdgas, Gold, Kupfer) kommen von
-Yahoo Finance (Boersenschlusskurs des letzten Handelstags). FRED dient als
-Ausfall-Fallback fuer VIX/Brent/WTI/Erdgas. Monatliche/woechentliche Serien
-(US-Arbeitsmarkt) kommen von FRED; die 10J-Renditen fuer die Spreads von der
-EZB (Fallback OECD/FRED), die EU-Fruehindikatoren vom EC-BCS-Dateifeed.
+QUELLEN (Stand 07/2026) - ausschliesslich amtlich/offiziell, KEIN Yahoo:
+  VIX          Cboe via FRED                (~1-2 Tage Nachlauf)
+  Brent/WTI/Gas  U.S. EIA via FRED (Spot)   (~3-4 Werktage Nachlauf)
+  Gold         LBMA Gold Price PM           (~1 Tag Nachlauf)
+  Kupfer       FRED Weltmarktpreis          (MONATLICH, USD/t -> USD/lb)
+  US-Arbeitsmarkt  FRED
+  10J-Renditen/Spreads  EZB (Fallback OECD/FRED), monatlich
+  EU-Fruehindikatoren   EC-BCS-Dateifeed, monatlich
+
+Hinweis zum Oel-/Gas-Nachlauf: Die EIA veroeffentlicht ihre Spotpreise selbst mit
+3-4 Werktagen Verzoegerung. Direkt bei der EIA abgefragt (hist_xls) ist der Stand
+identisch mit FRED - der Umweg ueber FRED kostet also nichts. Tagesaktuelle Werte
+gaebe es nur ueber (lizenzpflichtige) Boersen-/Futures-Daten.
 
 Ausgabe: marktdaten.json. Exit 0 = Erfolg (Datei geschrieben), 1 = Fehler.
 """
@@ -26,7 +34,8 @@ import requests
 FRED = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={id}&cosd={start}"
 FRED_API = ("https://api.stlouisfed.org/fred/series/observations"
             "?series_id={id}&observation_start={start}&api_key={key}&file_type=json")
-YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=2y"
+LBMA_GOLD = "https://prices.lbma.org.uk/json/gold_pm.json"   # offizieller LBMA Gold Price PM
+LB_PER_TON = 2204.62262                                      # Umrechnung USD/t -> USD/lb
 EC_BASE = "https://ec.europa.eu/economy_finance/db_indicators/surveys/documents/series/nace2_ecfin_{vint}/main_indicators_sa_nace2.zip"
 UA = {"User-Agent": "Mozilla/5.0 (compatible; MakroMonitor/1.0)"}
 MONTHS_DE = ["Jan","Feb","Maer","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"]
@@ -76,23 +85,25 @@ def fred(series, start="2021-01-01"):
         raise ValueError("FRED %s: keine Datenpunkte" % series)
     return out
 
-def yahoo(sym):
-    r = _get(YAHOO.format(sym=sym))
-    res = r.json()["chart"]["result"][0]
-    ts, cl = res["timestamp"], res["indicators"]["quote"][0]["close"]
-    out = [[datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%d"), round(c, 3)]
-           for t, c in zip(ts, cl) if c is not None]
+def lbma_gold():
+    """Offizieller LBMA Gold Price PM (USD/oz). Frei, ohne Key, ~1 Tag Nachlauf."""
+    r = _get(LBMA_GOLD)
+    out = []
+    for x in r.json():
+        d, v = x.get("d"), x.get("v")
+        if d and v and v[0] is not None:
+            try: out.append([d, round(float(v[0]), 2)])
+            except (ValueError, TypeError): pass
+    out.sort()
     if not out:
-        raise ValueError("Yahoo %s: keine Datenpunkte" % sym)
+        raise ValueError("LBMA Gold: keine Datenpunkte")
     return out
 
-def daily(yahoo_sym, fred_id):
-    """Tagesaktueller Marktpreis: bevorzugt Yahoo (Boersenschlusskurs), sonst FRED."""
-    try:
-        return yahoo(yahoo_sym)
-    except Exception as e:
-        print("[warn] Yahoo %s fehlgeschlagen (%s); Fallback FRED %s" % (yahoo_sym, e, fred_id), file=sys.stderr)
-        return fred(fred_id)
+
+def fred_copper_lb(start="2021-01-01"):
+    """Weltmarktpreis Kupfer (FRED PCOPPUSDM, USD/Tonne, MONATLICH) -> USD/lb."""
+    return [[d, round(v / LB_PER_TON, 3)] for d, v in fred("PCOPPUSDM", start)]
+
 
 def ecb_irs(area, start="2021-01"):
     """Monatliche 10J-Konvergenzrendite (Maastricht) der EZB, ~1 Monat Nachlauf."""
@@ -214,11 +225,11 @@ def build_payload(d):
         {"id":"vix","group":"sent","kind":"num","dec":2,"unit":"pts","freq":"d","asof":af(d["VIX"]),"raw":round(last(d["VIX"]),2),"delta":dl(d["VIX"])},
         {"id":"btp","group":"sent","kind":"num","dec":1,"unit":"bps","freq":"m","asof":af(d["BTP_Bund"]),"raw":round(last(d["BTP_Bund"]),1),"delta":dl(d["BTP_Bund"]),"note":"ecbAvg"},
         {"id":"oat","group":"sent","kind":"num","dec":1,"unit":"bps","freq":"m","asof":af(d["OAT_Bund"]),"raw":round(last(d["OAT_Bund"]),1),"delta":dl(d["OAT_Bund"]),"note":"ecbAvg"},
-        {"id":"brent","group":"comm","kind":"cur","dec":2,"unit":"usdbbl","freq":"d","asof":af(d["Brent"]),"raw":round(last(d["Brent"]),2),"delta":dl(d["Brent"])},
-        {"id":"wti","group":"comm","kind":"cur","dec":2,"unit":"usdbbl","freq":"d","asof":af(d["WTI"]),"raw":round(last(d["WTI"]),2),"delta":dl(d["WTI"])},
-        {"id":"gold","group":"comm","kind":"cur","dec":2,"unit":"usdoz","freq":"d","asof":af(d["Gold"]),"raw":round(last(d["Gold"]),2),"delta":dl(d["Gold"])},
-        {"id":"gas","group":"comm","kind":"cur","dec":2,"unit":"usdmmbtu","freq":"d","asof":af(d["HenryHub"]),"raw":round(last(d["HenryHub"]),2),"delta":dl(d["HenryHub"])},
-        {"id":"copper","group":"comm","kind":"cur","dec":2,"unit":"usdlb","freq":"d","asof":af(d["Copper"]),"raw":round(last(d["Copper"]),2),"delta":dl(d["Copper"])},
+        {"id":"brent","group":"comm","kind":"cur","dec":2,"unit":"usdbbl","freq":"d","asof":af(d["Brent"]),"raw":round(last(d["Brent"]),2),"delta":dl(d["Brent"]),"note":"eiaLag"},
+        {"id":"wti","group":"comm","kind":"cur","dec":2,"unit":"usdbbl","freq":"d","asof":af(d["WTI"]),"raw":round(last(d["WTI"]),2),"delta":dl(d["WTI"]),"note":"eiaLag"},
+        {"id":"gold","group":"comm","kind":"cur","dec":2,"unit":"usdoz","freq":"d","asof":af(d["Gold"]),"raw":round(last(d["Gold"]),2),"delta":dl(d["Gold"]),"note":"lbma"},
+        {"id":"gas","group":"comm","kind":"cur","dec":2,"unit":"usdmmbtu","freq":"d","asof":af(d["HenryHub"]),"raw":round(last(d["HenryHub"]),2),"delta":dl(d["HenryHub"]),"note":"eiaLag"},
+        {"id":"copper","group":"comm","kind":"cur","dec":2,"unit":"usdlb","freq":"m","asof":af(d["Copper"]),"raw":round(last(d["Copper"]),2),"delta":dl(d["Copper"]),"note":"monthly"},
         {"id":"nfp","group":"lab","kind":"signk","dec":0,"unit":"mom","freq":"m","asof":af(d["NFP"]),"raw":round(nfp_chg,0),"delta":round(nfp_chg,0)},
         {"id":"unemp","group":"lab","kind":"num","dec":1,"unit":"pct","freq":"m","asof":af(d["Unemp"]),"raw":round(last(d["Unemp"]),1),"delta":dl(d["Unemp"])},
         {"id":"claims","group":"lab","kind":"k","dec":0,"unit":"weekly","freq":"d","asof":af(d["Claims"]),"raw":round(last(d["Claims"])/1000,0),"delta":round((last(d["Claims"])-prev(d["Claims"]))/1000,1)},
@@ -281,13 +292,18 @@ def main():
     d["Y_DE"] = yields_country("DE", "IRLTLT01DEM156N"); _t.sleep(1.5)
     d["Y_IT"] = yields_country("IT", "IRLTLT01ITM156N"); _t.sleep(1.5)
     d["Y_FR"] = yields_country("FR", "IRLTLT01FRM156N")
-    # Tagesaktuelle Marktpreise: Yahoo (letzter Handelstag) mit FRED-Fallback
-    d["VIX"] = daily("^VIX", "VIXCLS")
-    d["Brent"] = daily("BZ=F", "DCOILBRENTEU")
-    d["WTI"] = daily("CL=F", "DCOILWTICO")
-    d["HenryHub"] = daily("NG=F", "DHHNGSP")
-    d["Gold"] = yahoo("GC=F")
-    d["Copper"] = yahoo("HG=F")
+    # Marktpreise - ausschliesslich amtliche/offizielle Quellen (kein Yahoo):
+    #   VIX      Cboe via FRED            (~1-2 Tage Nachlauf)
+    #   Oel/Gas  EIA via FRED (Spotpreis) (~3-4 Werktage Nachlauf - so veroeffentlicht
+    #            die EIA; direkt bei der EIA abgefragt ist es exakt derselbe Stand)
+    #   Gold     LBMA Gold Price PM       (~1 Tag Nachlauf)
+    #   Kupfer   FRED Weltmarktpreis      (MONATLICH, USD/t -> USD/lb)
+    d["VIX"] = fred("VIXCLS")
+    d["Brent"] = fred("DCOILBRENTEU")
+    d["WTI"] = fred("DCOILWTICO")
+    d["HenryHub"] = fred("DHHNGSP")
+    d["Gold"] = lbma_gold()
+    d["Copper"] = fred_copper_lb()
     ec = ec_bcs()
     for k in ("ESI","IndConf","ConsConf","SvcConf"):
         d[k] = ec[k]
