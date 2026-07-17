@@ -55,6 +55,7 @@ jobs:
         run: python businesscycle_updater.py
 
       - name: Aktualisierte JSON-Dateien committen (nur bei Aenderung)
+        id: commit
         run: |
           if [ -n "$(git status --porcelain marktdaten.json businesscycle_data.json)" ]; then
             git config user.name "gloriarms-data-bot"
@@ -62,6 +63,22 @@ jobs:
             git add marktdaten.json businesscycle_data.json
             git commit -m "Daten-Update $(date -u +%Y-%m-%dT%H:%MZ)"
             git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "Keine Aenderungen - nichts zu committen."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # WICHTIG: Die Webseite backt die Daten zur BAUZEIT ein (Astro-Build) und
+      # laedt sie NICHT zur Laufzeit. Ohne diesen Rebuild zeigt gloriarms.com
+      # dauerhaft den Stand des letzten Website-Builds - egal wie frisch die
+      # JSON im Repo ist. Genau das war der Grund fuer "Updated: July 12".
+      - name: Webseiten-Rebuild anstossen (Deploy-Hook)
+        if: steps.commit.outputs.changed == 'true'
+        run: |
+          if [ -z "${{ secrets.SITE_BUILD_HOOK_URL }}" ]; then
+            echo "SITE_BUILD_HOOK_URL nicht gesetzt - Webseite wird NICHT neu gebaut."
+            exit 1
+          fi
+          curl -fsS -X POST "${{ secrets.SITE_BUILD_HOOK_URL }}" > /dev/null
+          echo "Webseiten-Rebuild angestossen."
