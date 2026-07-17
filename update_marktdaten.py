@@ -15,11 +15,23 @@ Design-Prinzipien:
 QUELLEN (Stand 07/2026) - ausschliesslich amtlich/offiziell, KEIN Yahoo:
   VIX          Cboe via FRED                (~1-2 Tage Nachlauf)
   Brent/WTI/Gas  U.S. EIA via FRED (Spot)   (~3-4 Werktage Nachlauf)
-  Gold         LBMA Gold Price PM           (~1 Tag Nachlauf)
-  Kupfer       FRED Weltmarktpreis          (MONATLICH, USD/t -> USD/lb)
-  US-Arbeitsmarkt  FRED
+  Gold         World Bank Pink Sheet        (MONATLICH, USD/troy oz)
+  Kupfer       World Bank Pink Sheet        (MONATLICH, USD/t -> USD/lb)
+  US-Arbeitsmarkt  FRED (BLS/DOL)
   10J-Renditen/Spreads  EZB (Fallback OECD/FRED), monatlich
   EU-Fruehindikatoren   EC-BCS-Dateifeed, monatlich
+
+LIZENZ - warum Gold/Kupfer von der Weltbank kommen (Umstellung 17.07.2026):
+  "Frei abrufbar" ist nicht dasselbe wie "lizenzfrei". Der LBMA Gold Price wird von
+  ICE Benchmark Administration lizenziert (Redistribution an Dritte + kommerzielle
+  Nutzung brauchen eine IBA-Lizenz). Die FRED-Reihe PCOPPUSDM stammt vom IWF
+  ("Copyright (c) 2016, IMF. Reprinted with permission." - die Erlaubnis gilt FRED,
+  nicht uns; kommerzielle Weiterverwendung nur nach Rueckfrage bei copyright@imf.org).
+  Das World-Bank-Pink-Sheet steht unter CC BY 4.0 und erlaubt kommerzielle Nutzung
+  ausdruecklich, verlangt nur Quellenangabe. Preis dafuer: nur monatliche Werte.
+  Kupfer ist derselbe LME-Preis wie zuvor (2026M06: 13.552 USD/t bei beiden).
+  OFFEN: VIX (Cboe) ist weiterhin nur "reprinted with permission" - kein freier
+  Ersatz vorhanden. Siehe SETUP.md, Abschnitt "Bekannte Risiken".
 
 Hinweis zum Oel-/Gas-Nachlauf: Die EIA veroeffentlicht ihre Spotpreise selbst mit
 3-4 Werktagen Verzoegerung. Direkt bei der EIA abgefragt (hist_xls) ist der Stand
@@ -34,7 +46,11 @@ import requests
 FRED = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={id}&cosd={start}"
 FRED_API = ("https://api.stlouisfed.org/fred/series/observations"
             "?series_id={id}&observation_start={start}&api_key={key}&file_type=json")
-LBMA_GOLD = "https://prices.lbma.org.uk/json/gold_pm.json"   # offizieller LBMA Gold Price PM
+# World Bank Pink Sheet (CC BY 4.0). Die Datei-URL enthaelt eine Jahrgangs-Kennung,
+# die sich jaehrlich aendert -> wir lesen sie von der Landingpage statt sie fest zu
+# verdrahten (sonst friert die Reihe irgendwann stillschweigend ein).
+WB_LANDING = "https://www.worldbank.org/en/research/commodity-markets"
+WB_XLSX_RE = r"https://thedocs\.worldbank\.org[^\"'<> ]*?CMO-Historical-Data-Monthly\.xlsx"
 LB_PER_TON = 2204.62262                                      # Umrechnung USD/t -> USD/lb
 EC_BASE = "https://ec.europa.eu/economy_finance/db_indicators/surveys/documents/series/nace2_ecfin_{vint}/main_indicators_sa_nace2.zip"
 UA = {"User-Agent": "Mozilla/5.0 (compatible; MakroMonitor/1.0)"}
@@ -85,24 +101,86 @@ def fred(series, start="2021-01-01"):
         raise ValueError("FRED %s: keine Datenpunkte" % series)
     return out
 
-def lbma_gold():
-    """Offizieller LBMA Gold Price PM (USD/oz). Frei, ohne Key, ~1 Tag Nachlauf."""
-    r = _get(LBMA_GOLD)
-    out = []
-    for x in r.json():
-        d, v = x.get("d"), x.get("v")
-        if d and v and v[0] is not None:
-            try: out.append([d, round(float(v[0]), 2)])
-            except (ValueError, TypeError): pass
-    out.sort()
-    if not out:
-        raise ValueError("LBMA Gold: keine Datenpunkte")
+_WB_CACHE = {}
+
+def worldbank_pinksheet(start="2021-01"):
+    """World-Bank-Pink-Sheet (CC BY 4.0): Gold (USD/troy oz) + Kupfer (USD/t),
+    beide MONATLICH. Gibt {"Gold": [[iso, wert], ...], "Copper": [...]} zurueck.
+
+    Kupferwerte werden hier noch NICHT umgerechnet - das macht der Aufrufer.
+    Ergebnis wird gecached, damit die 800-KB-Datei nur einmal geladen wird.
+    """
+    if _WB_CACHE:
+        return _WB_CACHE
+
+    import re
+    # 1) Aktuelle Datei-URL von der Landingpage holen (Jahrgang aendert sich).
+    html = _get(WB_LANDING).text
+    urls = re.findall(WB_XLSX_RE, html)
+    if not urls:
+        raise ValueError("World Bank: keine Pink-Sheet-URL auf der Landingpage gefunden "
+                         "(Seitenstruktur geaendert?)")
+    url = sorted(set(urls))[-1]
+
+    # 2) XLSX laden und Blatt "Monthly Prices" auswerten.
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(_get(url).content), read_only=True, data_only=True)
+    if "Monthly Prices" not in wb.sheetnames:
+        raise ValueError("World Bank: Blatt 'Monthly Prices' fehlt")
+    rows = list(wb["Monthly Prices"].iter_rows(values_only=True))
+
+    # Kopfzeile mit den Spaltennamen suchen (Position ist nicht garantiert).
+    hdr = None
+    for i, r in enumerate(rows[:12]):
+        if r and any(c == "Gold" for c in r if c) and any(c == "Copper" for c in r if c):
+            hdr = i
+            break
+    if hdr is None:
+        raise ValueError("World Bank: Spalten 'Gold'/'Copper' nicht gefunden")
+
+    col = {}
+    for i, name in enumerate(rows[hdr]):
+        if name in ("Gold", "Copper"):
+            col[name] = i
+
+    out = {"Gold": [], "Copper": []}
+    for r in rows[hdr + 1:]:
+        per = r[0]
+        if not per or "M" not in str(per):
+            continue
+        try:
+            y, m = str(per).split("M")
+            iso = "%04d-%02d-01" % (int(y), int(m))
+        except (ValueError, TypeError):
+            continue
+        if iso[:7] < start:
+            continue
+        for name, i in col.items():
+            v = r[i]
+            if v is None or str(v).strip() in ("", "\u2026", "..", "."):
+                continue
+            try:
+                out[name].append([iso, float(v)])
+            except (ValueError, TypeError):
+                pass
+
+    for name in ("Gold", "Copper"):
+        out[name].sort()
+        if not out[name]:
+            raise ValueError("World Bank: keine Datenpunkte fuer %s" % name)
+
+    _WB_CACHE.update(out)
     return out
 
 
-def fred_copper_lb(start="2021-01-01"):
-    """Weltmarktpreis Kupfer (FRED PCOPPUSDM, USD/Tonne, MONATLICH) -> USD/lb."""
-    return [[d, round(v / LB_PER_TON, 3)] for d, v in fred("PCOPPUSDM", start)]
+def wb_gold():
+    """Gold, Monatsmittel (USD/troy oz). Quelle: World Bank Pink Sheet, CC BY 4.0."""
+    return [[d, round(v, 2)] for d, v in worldbank_pinksheet()["Gold"]]
+
+
+def wb_copper_lb():
+    """Kupfer, Monatsmittel (USD/t -> USD/lb). Quelle: World Bank Pink Sheet, CC BY 4.0."""
+    return [[d, round(v / LB_PER_TON, 3)] for d, v in worldbank_pinksheet()["Copper"]]
 
 
 def ecb_irs(area, start="2021-01"):
@@ -227,7 +305,7 @@ def build_payload(d):
         {"id":"oat","group":"sent","kind":"num","dec":1,"unit":"bps","freq":"m","asof":af(d["OAT_Bund"]),"raw":round(last(d["OAT_Bund"]),1),"delta":dl(d["OAT_Bund"]),"note":"ecbAvg"},
         {"id":"brent","group":"comm","kind":"cur","dec":2,"unit":"usdbbl","freq":"d","asof":af(d["Brent"]),"raw":round(last(d["Brent"]),2),"delta":dl(d["Brent"]),"note":"eiaLag"},
         {"id":"wti","group":"comm","kind":"cur","dec":2,"unit":"usdbbl","freq":"d","asof":af(d["WTI"]),"raw":round(last(d["WTI"]),2),"delta":dl(d["WTI"]),"note":"eiaLag"},
-        {"id":"gold","group":"comm","kind":"cur","dec":2,"unit":"usdoz","freq":"d","asof":af(d["Gold"]),"raw":round(last(d["Gold"]),2),"delta":dl(d["Gold"]),"note":"lbma"},
+        {"id":"gold","group":"comm","kind":"cur","dec":2,"unit":"usdoz","freq":"m","asof":af(d["Gold"]),"raw":round(last(d["Gold"]),2),"delta":dl(d["Gold"]),"note":"monthly"},
         {"id":"gas","group":"comm","kind":"cur","dec":2,"unit":"usdmmbtu","freq":"d","asof":af(d["HenryHub"]),"raw":round(last(d["HenryHub"]),2),"delta":dl(d["HenryHub"]),"note":"eiaLag"},
         {"id":"copper","group":"comm","kind":"cur","dec":2,"unit":"usdlb","freq":"m","asof":af(d["Copper"]),"raw":round(last(d["Copper"]),2),"delta":dl(d["Copper"]),"note":"monthly"},
         {"id":"nfp","group":"lab","kind":"signk","dec":0,"unit":"mom","freq":"m","asof":af(d["NFP"]),"raw":round(nfp_chg,0),"delta":round(nfp_chg,0)},
@@ -296,14 +374,14 @@ def main():
     #   VIX      Cboe via FRED            (~1-2 Tage Nachlauf)
     #   Oel/Gas  EIA via FRED (Spotpreis) (~3-4 Werktage Nachlauf - so veroeffentlicht
     #            die EIA; direkt bei der EIA abgefragt ist es exakt derselbe Stand)
-    #   Gold     LBMA Gold Price PM       (~1 Tag Nachlauf)
-    #   Kupfer   FRED Weltmarktpreis      (MONATLICH, USD/t -> USD/lb)
+    #   Gold     World Bank Pink Sheet    (MONATLICH, CC BY 4.0)
+    #   Kupfer   World Bank Pink Sheet    (MONATLICH, USD/t -> USD/lb, CC BY 4.0)
     d["VIX"] = fred("VIXCLS")
     d["Brent"] = fred("DCOILBRENTEU")
     d["WTI"] = fred("DCOILWTICO")
     d["HenryHub"] = fred("DHHNGSP")
-    d["Gold"] = lbma_gold()
-    d["Copper"] = fred_copper_lb()
+    d["Gold"] = wb_gold()          # eine XLSX fuer beide - wird intern gecached
+    d["Copper"] = wb_copper_lb()
     ec = ec_bcs()
     for k in ("ESI","IndConf","ConsConf","SvcConf"):
         d[k] = ec[k]
