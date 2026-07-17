@@ -13,7 +13,7 @@ Design-Prinzipien:
 - Bei jedem Fehlschlag geht eine E-Mail-Benachrichtigung raus (Resend API).
 
 QUELLEN (Stand 07/2026) - ausschliesslich amtlich/offiziell, KEIN Yahoo:
-  VIX          Cboe via FRED                (~1-2 Tage Nachlauf)
+  NFCI         Chicago Fed via FRED         (WOECHENTLICH, 0 = normale Bedingungen)
   Brent/WTI/Gas  U.S. EIA via FRED (Spot)   (~3-4 Werktage Nachlauf)
   Gold         World Bank Pink Sheet        (MONATLICH, USD/troy oz)
   Kupfer       World Bank Pink Sheet        (MONATLICH, USD/t -> USD/lb)
@@ -30,8 +30,15 @@ LIZENZ - warum Gold/Kupfer von der Weltbank kommen (Umstellung 17.07.2026):
   Das World-Bank-Pink-Sheet steht unter CC BY 4.0 und erlaubt kommerzielle Nutzung
   ausdruecklich, verlangt nur Quellenangabe. Preis dafuer: nur monatliche Werte.
   Kupfer ist derselbe LME-Preis wie zuvor (2026M06: 13.552 USD/t bei beiden).
-  OFFEN: VIX (Cboe) ist weiterhin nur "reprinted with permission" - kein freier
-  Ersatz vorhanden. Siehe SETUP.md, Abschnitt "Bekannte Risiken".
+  VIX ENTFERNT (17.07.2026): FRED sagt zu Reihen mit Copyright-Vermerk woertlich:
+  "Before using data with a copyright notice for anything other than your own
+  personal use, you must contact the data owner to obtain permission. Unfortunately,
+  the Federal Reserve Bank of St. Louis cannot give you such permission."
+  VIXCLS traegt genau so einen Vermerk (Cboe). Ersetzt durch den NFCI der Chicago
+  Fed: Werk der Fed selbst, KEIN Fremd-Copyright-Vermerk, Nutzung mit Quellenangabe.
+  Der NFCI enthaelt den VIX zwar als eine von 105 Zutaten - aber wir verbreiten dann
+  den Fed-Index weiter, nicht den VIX. Alle uebrigen FRED-Reihen hier sind
+  "Public Domain: Citation Requested" (geprueft). Siehe SETUP.md.
 
 Hinweis zum Oel-/Gas-Nachlauf: Die EIA veroeffentlicht ihre Spotpreise selbst mit
 3-4 Werktagen Verzoegerung. Direkt bei der EIA abgefragt (hist_xls) ist der Stand
@@ -267,7 +274,7 @@ def compute_spreads(d):
 
 # ---------------------------------------------------------------- plausibility
 BOUNDS = {
-    "VIX": (5, 150), "Brent": (10, 250), "WTI": (10, 250), "Gold": (300, 15000),
+    "NFCI": (-3, 6), "Brent": (10, 250), "WTI": (10, 250), "Gold": (300, 15000),
     "HenryHub": (0.3, 60), "Copper": (0.5, 30), "Unemp": (0.5, 30),
     "Claims": (50000, 3000000), "ESI": (40, 140), "IndConf": (-60, 40),
     "ConsConf": (-60, 40), "SvcConf": (-60, 40),
@@ -300,7 +307,7 @@ def build_payload(d):
     def af(s): return s[-1][0]                      # asof als ISO-Datum
     def dl(s): return round(last(s) - prev(s), 1)   # Veraenderung (1 Nachkommastelle)
     cards = [
-        {"id":"vix","group":"sent","kind":"num","dec":2,"unit":"pts","freq":"d","asof":af(d["VIX"]),"raw":round(last(d["VIX"]),2),"delta":dl(d["VIX"])},
+        {"id":"nfci","group":"sent","kind":"num","dec":2,"unit":"idx","freq":"d","asof":af(d["NFCI"]),"raw":round(last(d["NFCI"]),2),"delta":round(last(d["NFCI"])-prev(d["NFCI"]),2),"ddec":2,"note":"fedWeekly"},  # 2 Nachkommastellen: der NFCI bewegt sich in Hundertsteln
         {"id":"btp","group":"sent","kind":"num","dec":1,"unit":"bps","freq":"m","asof":af(d["BTP_Bund"]),"raw":round(last(d["BTP_Bund"]),1),"delta":dl(d["BTP_Bund"]),"note":"ecbAvg"},
         {"id":"oat","group":"sent","kind":"num","dec":1,"unit":"bps","freq":"m","asof":af(d["OAT_Bund"]),"raw":round(last(d["OAT_Bund"]),1),"delta":dl(d["OAT_Bund"]),"note":"ecbAvg"},
         {"id":"brent","group":"comm","kind":"cur","dec":2,"unit":"usdbbl","freq":"d","asof":af(d["Brent"]),"raw":round(last(d["Brent"]),2),"delta":dl(d["Brent"]),"note":"eiaLag"},
@@ -320,7 +327,7 @@ def build_payload(d):
     nfp_series = [[d["NFP"][i][0][:7], round(d["NFP"][i][1]-d["NFP"][i-1][1], 0)]
                   for i in range(len(d["NFP"])-24, len(d["NFP"]))]
     series = {
-        "vix": {"l": dates(d["VIX"],120), "v": spark(d["VIX"],120)},
+        "nfci": {"l": dates(d["NFCI"],120), "v": spark(d["NFCI"],120)},
         "gold": {"l": dates(d["Gold"],180), "v": spark(d["Gold"],180)},
         "gas": {"l": dates(d["HenryHub"],180), "v": spark(d["HenryHub"],180)},
         "copper": {"l": dates(d["Copper"],180), "v": spark(d["Copper"],180)},
@@ -371,12 +378,12 @@ def main():
     d["Y_IT"] = yields_country("IT", "IRLTLT01ITM156N"); _t.sleep(1.5)
     d["Y_FR"] = yields_country("FR", "IRLTLT01FRM156N")
     # Marktpreise - ausschliesslich amtliche/offizielle Quellen (kein Yahoo):
-    #   VIX      Cboe via FRED            (~1-2 Tage Nachlauf)
+    #   NFCI     Chicago Fed via FRED     (WOECHENTLICH; ersetzt den VIX, s. Kopf)
     #   Oel/Gas  EIA via FRED (Spotpreis) (~3-4 Werktage Nachlauf - so veroeffentlicht
     #            die EIA; direkt bei der EIA abgefragt ist es exakt derselbe Stand)
     #   Gold     World Bank Pink Sheet    (MONATLICH, CC BY 4.0)
     #   Kupfer   World Bank Pink Sheet    (MONATLICH, USD/t -> USD/lb, CC BY 4.0)
-    d["VIX"] = fred("VIXCLS")
+    d["NFCI"] = fred("NFCI")
     d["Brent"] = fred("DCOILBRENTEU")
     d["WTI"] = fred("DCOILWTICO")
     d["HenryHub"] = fred("DHHNGSP")
